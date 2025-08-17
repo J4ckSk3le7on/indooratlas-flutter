@@ -1,1 +1,25 @@
-rootProject.name = 'com.indooratlas.flutter'
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+        maven { url "https://dl.cloudsmith.io/public/indooratlas/mvn-public/maven/" }
+    }
+
+    plugins {
+        id("com.android.library") version "8.5.2" // usa la última AGP estable
+        id("org.jetbrains.kotlin.android") version "1.9.25"
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://dl.cloudsmith.io/public/indooratlas/mvn-public/maven/" }
+    }
+}
+
+rootProject.name = "com.indooratlas.flutter"
+include(":")

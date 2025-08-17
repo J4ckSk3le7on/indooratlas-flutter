@@ -1,46 +1,14 @@
-group 'com.indooratlas.flutter'
-version '1.0-SNAPSHOT'
-
-buildscript {
-    ext.kotlin_version = '1.3.50'
-    repositories {
-        google()
-        jcenter()
-    }
-
-    dependencies {
-        classpath 'com.android.tools.build:gradle:4.1.0'
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-    }
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
 }
-
-rootProject.allprojects {
-    repositories {
-        google()
-        jcenter()
-        mavenCentral()
-        maven {
-           url "https://dl.cloudsmith.io/public/indooratlas/mvn-public/maven/"
-        }
-    }
-}
-
-apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
 
 android {
-    compileSdkVersion 30
+    namespace "com.indooratlas.flutter"
+    compileSdkVersion 34
 
-    sourceSets {
-        main.java.srcDirs += 'src/main/kotlin'
-    }
     defaultConfig {
-        minSdkVersion 16
-        consumerProguardFiles 'proguard-rules.pro'
+        minSdkVersion 23
+        targetSdkVersion 34
     }
-}
-
-dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-    implementation 'com.indooratlas.android:indooratlas-android-sdk:3.4.12'
 }
