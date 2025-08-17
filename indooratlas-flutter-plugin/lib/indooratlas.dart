@@ -611,7 +611,7 @@ class IndoorAtlas {
   static void setLocation(IACoordinate coordinate) {
     IALocation pos;
     if (coordinate is IALocation) {
-      pos = coordinate as IALocation;
+      pos = coordinate;
     } else {
       pos = IALocation.fromCoordinate(coordinate, timestamp: DateTime.now());
     }
