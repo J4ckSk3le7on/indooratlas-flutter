@@ -19,8 +19,8 @@ class IAPoint {
 }
 
 class IALocation extends IACoordinate {
-  late final IAPoint? pixel;
-  late final IAFloorplan? floorplan;
+  final IAPoint? pixel;
+  final IAFloorplan? floorplan;
   final double accuracy;
   final double heading;
   final double altitude;
@@ -28,6 +28,7 @@ class IALocation extends IACoordinate {
   final double floorCertainty;
   final double velocity;
   final DateTime timestamp;
+
   IALocation({
     required double latitude,
     required double longitude,
@@ -41,6 +42,7 @@ class IALocation extends IACoordinate {
   })  : pixel = null,
         floorplan = null,
         super(latitude, longitude);
+
   IALocation.fromCoordinate(
     IACoordinate coordinate, {
     this.accuracy = 0,
@@ -53,6 +55,7 @@ class IALocation extends IACoordinate {
   })  : pixel = null,
         floorplan = null,
         super(coordinate.latitude, coordinate.longitude);
+
   IALocation.fromMap(Map map)
       : accuracy = map['accuracy'],
         heading = map['heading'],
@@ -61,14 +64,13 @@ class IALocation extends IACoordinate {
         floorCertainty = map['floorCertainty'],
         velocity = map['velocity'],
         timestamp = DateTime.fromMillisecondsSinceEpoch(map['timestamp']),
-        super(map['latitude'], map['longitude']) {
-    if (map.containsKey('region')) {
-      this.floorplan = _Region.fromMap(map['region']).floorplan;
-    }
-    if (map.containsKey('pix_x') && map.containsKey('pix_y')) {
-      this.pixel = IAPoint(map['pix_x'], map['pix_y']);
-    }
-  }
+        floorplan = map.containsKey('region')
+            ? _Region.fromMap(map['region']).floorplan
+            : null,
+        pixel = (map.containsKey('pix_x') && map.containsKey('pix_y'))
+            ? IAPoint(map['pix_x'], map['pix_y'])
+            : null,
+        super(map['latitude'], map['longitude']);
 }
 
 enum IAStatus {
