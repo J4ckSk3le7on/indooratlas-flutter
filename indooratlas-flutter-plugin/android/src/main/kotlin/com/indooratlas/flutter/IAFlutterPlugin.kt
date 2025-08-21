@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import androidx.annotation.MainThread
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -23,6 +24,7 @@ import io.flutter.plugin.common.EventChannel.StreamHandler
 import com.indooratlas.android.sdk.IAGeofence
 import com.indooratlas.android.sdk.IAGeofenceEvent
 import com.indooratlas.android.sdk.IAGeofenceListener
+import com.indooratlas.android.sdk.IAGeofenceRequest
 import com.indooratlas.android.sdk.IALocation
 import com.indooratlas.android.sdk.IALocationListener
 import com.indooratlas.android.sdk.IALocationManager
@@ -33,9 +35,9 @@ import com.indooratlas.android.sdk.IARegion
 import com.indooratlas.android.sdk.resources.IAFloorPlan
 import com.indooratlas.android.sdk.resources.IAVenue
 
-// -------------------------------
-// Data Converters (Object -> Map)
-// -------------------------------
+// ------------------------------------------------------------------
+// Helpers: conversiones a Map (para enviar a Dart)
+// ------------------------------------------------------------------
 private fun IAGeofence2Map(geofence: IAGeofence): Map<String, Any> {
     val vertices = geofence.edges.map { listOf(it[0], it[1]) }
     return mapOf(
@@ -113,9 +115,9 @@ private fun IALocation2Map(location: IALocation): Map<String, Any> {
     return map
 }
 
-// -------------------------------
-// Puente de eventos (EventChannels)
-// -------------------------------
+// ------------------------------------------------------------------
+// Event bridge (almacena sinks para EventChannels)
+// ------------------------------------------------------------------
 private class IAEventBridge {
     @Volatile var statusSink: EventSink? = null
     @Volatile var locationSink: EventSink? = null
@@ -134,11 +136,12 @@ private class IAEventBridge {
     }
 }
 
-// ---------------------------------
-// Motor: puente con el SDK nativo
-// ---------------------------------
+// ------------------------------------------------------------------
+// Motor que comunica con IndoorAtlas SDK
+// ------------------------------------------------------------------
 private class IAFlutterEngine(
     private val context: Context,
+    private val channel: MethodChannel,
     private val events: IAEventBridge
 ) : IALocationListener,
     IARegion.Listener,
@@ -148,8 +151,11 @@ private class IAFlutterEngine(
 
     private val handler = Handler(Looper.getMainLooper())
     private var locationManager: IALocationManager? = null
+
     private var locationRequest = IALocationRequest.create()
     private var orientationRequest = IAOrientationRequest(1.0, 1.0)
+
+    private var geofencesRegistered = false
 
     var activityBinding: ActivityPluginBinding? = null
         set(value) {
@@ -174,12 +180,15 @@ private class IAFlutterEngine(
         return permissions.toTypedArray()
     }
 
-    // ----------------
+    // -------------------------
     // Listeners
-    // ----------------
+    // -------------------------
     override fun onLocationChanged(location: IALocation) {
         val data = IALocation2Map(location)
-        handler.post { events.locationSink?.success(data) }
+        handler.post { 
+            events.locationSink?.success(data)
+            channel.invokeMethod("onLocationChanged", data)
+        }
     }
 
     override fun onStatusChanged(provider: String, status: Int, extras: Bundle) {
@@ -190,18 +199,46 @@ private class IAFlutterEngine(
             IALocationManager.STATUS_LIMITED -> 3
             else -> 0
         }
-        val msg = extras.getString("message") ?: ""
-        handler.post { events.statusSink?.success(mapOf("status" to mappedStatus, "message" to msg)) }
+        val payload = mapOf("status" to mappedStatus, "message" to (extras.getString("message") ?: ""))
+        handler.post {
+            events.statusSink?.success(payload)
+            channel.invokeMethod("onStatusChanged", payload)
+        }
     }
 
     override fun onEnterRegion(region: IARegion) {
-        val payload = mapOf("enter" to true, "region" to IARegion2Map(region))
-        handler.post { events.regionSink?.success(payload) }
+        val payload = IARegion2Map(region)
+        handler.post {
+            events.regionSink?.success(mapOf("enter" to true, "region" to payload))
+            channel.invokeMethod("onEnterRegion", payload)
+        }
+
+        // Si el venue tiene geofences, registrarlos
+        val manager = locationManager ?: return
+        val venue = region.venue ?: return
+        val fences = venue.geofences
+        if (!geofencesRegistered && fences.isNotEmpty()) {
+            val reqBuilder = IAGeofenceRequest.Builder()
+            fences.forEach { reqBuilder.withGeofence(it) }
+            val request = reqBuilder.build()
+            manager.addGeofences(request, this)
+            geofencesRegistered = true
+        }
     }
 
     override fun onExitRegion(region: IARegion) {
-        val payload = mapOf("enter" to false, "region" to IARegion2Map(region))
-        handler.post { events.regionSink?.success(payload) }
+        val payload = IARegion2Map(region)
+        handler.post {
+            events.regionSink?.success(mapOf("enter" to false, "region" to payload))
+            channel.invokeMethod("onExitRegion", payload)
+        }
+
+        // Limpiar geofences si estaban registrados
+        val manager = locationManager ?: return
+        if (geofencesRegistered) {
+            manager.removeGeofenceUpdates(this)
+            geofencesRegistered = false
+        }
     }
 
     override fun onOrientationChange(timestamp: Long, quaternion: DoubleArray) {
@@ -209,43 +246,78 @@ private class IAFlutterEngine(
             "timestamp" to timestamp,
             "x" to quaternion[0], "y" to quaternion[1], "z" to quaternion[2], "w" to quaternion[3]
         )
-        handler.post { events.orientationSink?.success(data) }
+        handler.post {
+            events.orientationSink?.success(data)
+            channel.invokeMethod("onOrientationChanged", data)
+        }
     }
 
     override fun onHeadingChanged(timestamp: Long, heading: Double) {
         val data = mapOf("timestamp" to timestamp, "heading" to heading)
-        handler.post { events.headingSink?.success(data) }
+        handler.post {
+            events.headingSink?.success(data)
+            channel.invokeMethod("onHeadingChanged", data)
+        }
     }
 
+    // -------------------------
+    // Geofence handling (API 3.7.1)
+    // -------------------------
     override fun onGeofencesTriggered(event: IAGeofenceEvent) {
-        event.triggers.forEach { trigger ->
-            val type = when (trigger.transition) {
-                IAGeofence.GEOFENCE_TRANSITION_ENTER -> "enter"
-                IAGeofence.GEOFENCE_TRANSITION_EXIT -> "exit"
-                else -> "unknown"
-            }
-            trigger.geofence?.let { geofence ->
-                val data = mapOf("type" to type, "geofence" to IAGeofence2Map(geofence))
-                handler.post { events.geofenceSink?.success(data) }
+        // Nota: si tu SDK expone getGeofenceTransition()/getTriggeringGeofences(),
+        // cámbialo por esos nombres. Muchas versiones Kotlin convierten a properties.
+        val transition = try {
+            event.geofenceTransition
+        } catch (e: NoSuchMethodError) {
+            // Fallback si la API es getGeofenceTransition()
+            try { event.javaClass.getMethod("getGeofenceTransition").invoke(event) as Int } catch (_: Exception) { -1 }
+        }
+
+        val type = when (transition) {
+            IAGeofence.GEOFENCE_TRANSITION_ENTER -> "enter"
+            IAGeofence.GEOFENCE_TRANSITION_EXIT -> "exit"
+            else -> "unknown"
+        }
+
+        // Obtener lista de geofences activadas
+        val triggering = try {
+            event.triggeringGeofences
+        } catch (e: NoSuchMethodError) {
+            // Fallback para getTriggeringGeofences()
+            try { event.javaClass.getMethod("getTriggeringGeofences").invoke(event) as List<*> } catch (_: Exception) { emptyList<Any>() }
+        }
+
+        // Iterar y enviar a Dart
+        (triggering as? List<*>)?.forEach { gf ->
+            if (gf is IAGeofence) {
+                val data = mapOf("type" to type, "geofence" to IAGeofence2Map(gf))
+                handler.post {
+                    events.geofenceSink?.success(data)
+                    channel.invokeMethod("onGeofenceEvent", data)
+                }
             }
         }
     }
 
+    // -------------------------
+    // Permissions callback
+    // -------------------------
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<String>,
         grantResults: IntArray
     ): Boolean {
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            // Puedes propagar a Dart si lo necesitas.
+            // Si quieres, puedes notificar a Dart con el resultado.
             return true
         }
         return false
     }
 
-    // ----------------
-    // API pública
-    // ----------------
+    // -------------------------
+    // API pública expuesta a Dart
+    // -------------------------
+    @MainThread
     fun initialize(apiKey: String, apiSecret: String) {
         handler.post {
             val extras = Bundle().apply {
@@ -254,7 +326,7 @@ private class IAFlutterEngine(
             }
             locationManager?.destroy()
             locationManager = IALocationManager.create(context, extras)
-            locationManager?.registerGeofenceListener(this)
+            // no registramos listeners aquí; se hacen en startPositioning()
             requestPermissions()
         }
     }
@@ -289,7 +361,10 @@ private class IAFlutterEngine(
                 it.removeLocationUpdates(this)
                 it.unregisterOrientationListener(this)
                 it.unregisterRegionListener(this)
-                it.unregisterGeofenceListener(this)
+                if (geofencesRegistered) {
+                    it.removeGeofenceUpdates(this)
+                    geofencesRegistered = false
+                }
             }
         }
     }
@@ -300,22 +375,23 @@ private class IAFlutterEngine(
 
     fun detach() {
         handler.post {
+            stopPositioning()
             locationManager?.destroy()
             locationManager = null
         }
     }
 }
 
-// ---------------------------------
-// Plugin (Flutter Embedding V2)
-// ---------------------------------
+// ------------------------------------------------------------------
+// Plugin (Embedding V2) con MethodChannel + EventChannels
+// ------------------------------------------------------------------
 class IAFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     private var engine: IAFlutterEngine? = null
     private var methodChannel: MethodChannel? = null
     private val events = IAEventBridge()
 
-    // EventChannels
+    // Event channels
     private var statusCh: EventChannel? = null
     private var locationCh: EventChannel? = null
     private var regionCh: EventChannel? = null
@@ -327,7 +403,7 @@ class IAFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         methodChannel = MethodChannel(binding.binaryMessenger, "com.indooratlas.flutter")
         methodChannel?.setMethodCallHandler(this)
 
-        // Event channels
+        // Crear EventChannels
         statusCh = EventChannel(binding.binaryMessenger, "com.indooratlas.flutter/events/status")
         locationCh = EventChannel(binding.binaryMessenger, "com.indooratlas.flutter/events/location")
         regionCh = EventChannel(binding.binaryMessenger, "com.indooratlas.flutter/events/region")
@@ -335,11 +411,9 @@ class IAFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         orientationCh = EventChannel(binding.binaryMessenger, "com.indooratlas.flutter/events/orientation")
         headingCh = EventChannel(binding.binaryMessenger, "com.indooratlas.flutter/events/heading")
 
-        val mkHandler = { sinkSetter: (EventSink?) -> Unit ->
-            object : StreamHandler {
-                override fun onListen(arguments: Any?, events: EventSink?) { sinkSetter(events) }
-                override fun onCancel(arguments: Any?) { sinkSetter(null) }
-            }
+        fun mkHandler(setSink: (EventSink?) -> Unit) = object : StreamHandler {
+            override fun onListen(arguments: Any?, events: EventSink?) { setSink(events) }
+            override fun onCancel(arguments: Any?) { setSink(null) }
         }
 
         statusCh?.setStreamHandler(mkHandler { events.statusSink = it })
@@ -349,7 +423,7 @@ class IAFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         orientationCh?.setStreamHandler(mkHandler { events.orientationSink = it })
         headingCh?.setStreamHandler(mkHandler { events.headingSink = it })
 
-        engine = IAFlutterEngine(binding.applicationContext, events)
+        engine = IAFlutterEngine(binding.applicationContext, methodChannel!!, events)
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -362,6 +436,7 @@ class IAFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         geofenceCh?.setStreamHandler(null); geofenceCh = null
         orientationCh?.setStreamHandler(null); orientationCh = null
         headingCh?.setStreamHandler(null); headingCh = null
+
         events.clearAll()
 
         engine?.detach()
@@ -396,9 +471,7 @@ class IAFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
     }
 
-    // ---------
     // ActivityAware
-    // ---------
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         engine?.activityBinding = binding
     }
