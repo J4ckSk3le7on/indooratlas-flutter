@@ -1,13 +1,12 @@
 package com.indooratlas.flutter
 
-import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
+import androidx.annotation.NonNull
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import androidx.annotation.MainThread
+import android.content.Context
+import android.Manifest
+import android.util.Log
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -17,307 +16,74 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry.RequestPermissionsResultListener
-import io.flutter.plugin.common.EventChannel
-import io.flutter.plugin.common.EventChannel.EventSink
-import io.flutter.plugin.common.EventChannel.StreamHandler
 
-import com.indooratlas.android.sdk.IAGeofence
-import com.indooratlas.android.sdk.IAGeofenceEvent
-import com.indooratlas.android.sdk.IAGeofenceListener
-import com.indooratlas.android.sdk.IAGeofenceRequest
 import com.indooratlas.android.sdk.IALocation
+import com.indooratlas.android.sdk.IALocationRequest
 import com.indooratlas.android.sdk.IALocationListener
 import com.indooratlas.android.sdk.IALocationManager
-import com.indooratlas.android.sdk.IALocationRequest
-import com.indooratlas.android.sdk.IAOrientationListener
-import com.indooratlas.android.sdk.IAOrientationRequest
 import com.indooratlas.android.sdk.IARegion
-import com.indooratlas.android.sdk.resources.IAFloorPlan
-import com.indooratlas.android.sdk.resources.IAVenue
 
-// ------------------------------------------------------------------
-// Helpers: conversiones a Map (para enviar a Dart)
-// ------------------------------------------------------------------
-private fun IAGeofence2Map(geofence: IAGeofence): Map<String, Any> {
-    val vertices = geofence.edges.map { listOf(it[0], it[1]) }
-    return mapOf(
-        "type" to "Feature",
-        "id" to geofence.id,
-        "properties" to mapOf(
-            "name" to geofence.name,
-            "floor" to geofence.floor,
-            "payload" to (geofence.payload?.toString() ?: "")
-        ),
-        "geometry" to mapOf(
-            "type" to "Polygon",
-            "coordinates" to listOf(vertices)
-        )
-    )
-}
+// Conversión de datos nativos a Map para enviar a Dart
+private fun IARegion.toMap(): Map<String, Any> = mapOf(
+    "regionId" to id,
+    "timestamp" to timestamp,
+    "type" to type
+)
 
-private fun IAFloorplan2Map(floorplan: IAFloorPlan): Map<String, Any> {
-    return mapOf(
-        "id" to floorplan.id,
-        "name" to floorplan.name,
-        "url" to floorplan.url,
-        "floorLevel" to floorplan.floorLevel,
-        "bearing" to floorplan.bearing,
-        "bitmapWidth" to floorplan.bitmapWidth,
-        "bitmapHeight" to floorplan.bitmapHeight,
-        "metersToPixels" to floorplan.metersToPixels,
-        "center" to listOf(floorplan.center.longitude, floorplan.center.latitude)
-    )
-}
+private fun IALocation.toMap(): Map<String, Any> = mapOf(
+    "latitude" to latitude,
+    "longitude" to longitude,
+    "accuracy" to accuracy,
+    "floorLevel" to (floorLevel ?: 0),
+    "timestamp" to time
+)
 
-private fun IAVenue2Map(venue: IAVenue): Map<String, Any> {
-    val map = mutableMapOf<String, Any>(
-        "id" to venue.id,
-        "name" to venue.name
-    )
-    val plans = venue.floorPlans.map { IAFloorplan2Map(it) }
-    if (plans.isNotEmpty()) map["floorPlans"] = plans
-    val fences = venue.geofences.map { IAGeofence2Map(it) }
-    if (fences.isNotEmpty()) map["geofences"] = fences
-    return map
-}
-
-private fun IARegion2Map(region: IARegion): Map<String, Any> {
-    val map = mutableMapOf<String, Any>(
-        "regionId" to region.id,
-        "timestamp" to region.timestamp,
-        "regionType" to region.type
-    )
-    region.floorPlan?.let { map["floorPlan"] = IAFloorplan2Map(it) }
-    region.venue?.let { map["venue"] = IAVenue2Map(it) }
-    return map
-}
-
-private fun IALocation2Map(location: IALocation): Map<String, Any> {
-    val map = mutableMapOf<String, Any>(
-        "latitude" to location.latitude,
-        "longitude" to location.longitude,
-        "accuracy" to location.accuracy,
-        "altitude" to location.altitude,
-        "heading" to location.bearing,
-        "floorCertainty" to location.floorCertainty,
-        "flr" to (location.floorLevel ?: 0),
-        "velocity" to location.toLocation().speed,
-        "timestamp" to location.time
-    )
-    location.region?.let { region ->
-        map["region"] = IARegion2Map(region)
-        region.floorPlan?.let { floorPlan ->
-            val point = floorPlan.coordinateToPoint(location.latLngFloor)
-            map["pix_x"] = point.x
-            map["pix_y"] = point.y
-        }
-    }
-    return map
-}
-
-// ------------------------------------------------------------------
-// Event bridge (almacena sinks para EventChannels)
-// ------------------------------------------------------------------
-private class IAEventBridge {
-    @Volatile var statusSink: EventSink? = null
-    @Volatile var locationSink: EventSink? = null
-    @Volatile var regionSink: EventSink? = null
-    @Volatile var geofenceSink: EventSink? = null
-    @Volatile var orientationSink: EventSink? = null
-    @Volatile var headingSink: EventSink? = null
-
-    fun clearAll() {
-        statusSink = null
-        locationSink = null
-        regionSink = null
-        geofenceSink = null
-        orientationSink = null
-        headingSink = null
-    }
-}
-
-// ------------------------------------------------------------------
-// Motor que comunica con IndoorAtlas SDK
-// ------------------------------------------------------------------
-private class IAFlutterEngine(
-    private val context: Context,
-    private val channel: MethodChannel,
-    private val events: IAEventBridge
-) : IALocationListener,
-    IARegion.Listener,
-    IAOrientationListener,
-    IAGeofenceListener,
-    RequestPermissionsResultListener {
+class IAFlutterEngine(
+    context: Context,
+    private val channel: MethodChannel
+) : IALocationListener, RequestPermissionsResultListener {
 
     private val handler = Handler(Looper.getMainLooper())
+    private val context = context
     private var locationManager: IALocationManager? = null
-
-    private var locationRequest = IALocationRequest.create()
-    private var orientationRequest = IAOrientationRequest(1.0, 1.0)
-
-    private var geofencesRegistered = false
-
-    var activityBinding: ActivityPluginBinding? = null
-        set(value) {
-            field?.removeRequestPermissionsResultListener(this)
-            value?.addRequestPermissionsResultListener(this)
-            field = value
-        }
 
     companion object {
         private const val PERMISSION_REQUEST_CODE = 444444
     }
 
-    private fun getRequiredPermissions(): Array<String> {
-        val permissions = mutableListOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            permissions.add(Manifest.permission.BLUETOOTH_SCAN)
-            permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
-        }
-        return permissions.toTypedArray()
-    }
-
-    // -------------------------
-    // Listeners
-    // -------------------------
-    override fun onLocationChanged(location: IALocation) {
-        val data = IALocation2Map(location)
-        handler.post { 
-            events.locationSink?.success(data)
-            channel.invokeMethod("onLocationChanged", data)
-        }
-    }
-
-    override fun onStatusChanged(provider: String, status: Int, extras: Bundle) {
-        val mappedStatus = when (status) {
-            IALocationManager.STATUS_OUT_OF_SERVICE -> 0
-            IALocationManager.STATUS_TEMPORARILY_UNAVAILABLE -> 1
-            IALocationManager.STATUS_AVAILABLE -> 2
-            IALocationManager.STATUS_LIMITED -> 3
-            else -> 0
-        }
-        val payload = mapOf("status" to mappedStatus, "message" to (extras.getString("message") ?: ""))
+    override fun onStatusChanged(provider: String, status: Int, extras: Bundle?) {
+        val safeMsg = extras?.getString("message") ?: ""
         handler.post {
-            events.statusSink?.success(payload)
-            channel.invokeMethod("onStatusChanged", payload)
+            channel.invokeMethod("onStatusChanged", {"status": status, "message": safeMsg})
+        }
+    }
+
+    override fun onLocationChanged(location: IALocation) {
+        val map = location.toMap()
+        handler.post {
+            channel.invokeMethod("onLocationChanged", map)
         }
     }
 
     override fun onEnterRegion(region: IARegion) {
-        val payload = IARegion2Map(region)
+        val map = region.toMap()
         handler.post {
-            events.regionSink?.success(mapOf("enter" to true, "region" to payload))
-            channel.invokeMethod("onEnterRegion", payload)
-        }
-
-        // Si el venue tiene geofences, registrarlos
-        val manager = locationManager ?: return
-        val venue = region.venue ?: return
-        val fences = venue.geofences
-        if (!geofencesRegistered && fences.isNotEmpty()) {
-            val reqBuilder = IAGeofenceRequest.Builder()
-            fences.forEach { reqBuilder.withGeofence(it) }
-            val request = reqBuilder.build()
-            manager.addGeofences(request, this)
-            geofencesRegistered = true
+            channel.invokeMethod("onEnterRegion", map)
         }
     }
 
     override fun onExitRegion(region: IARegion) {
-        val payload = IARegion2Map(region)
+        val map = region.toMap()
         handler.post {
-            events.regionSink?.success(mapOf("enter" to false, "region" to payload))
-            channel.invokeMethod("onExitRegion", payload)
-        }
-
-        // Limpiar geofences si estaban registrados
-        val manager = locationManager ?: return
-        if (geofencesRegistered) {
-            manager.removeGeofenceUpdates(this)
-            geofencesRegistered = false
+            channel.invokeMethod("onExitRegion", map)
         }
     }
 
-    override fun onOrientationChange(timestamp: Long, quaternion: DoubleArray) {
-        val data = mapOf(
-            "timestamp" to timestamp,
-            "x" to quaternion[0], "y" to quaternion[1], "z" to quaternion[2], "w" to quaternion[3]
-        )
-        handler.post {
-            events.orientationSink?.success(data)
-            channel.invokeMethod("onOrientationChanged", data)
-        }
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
+        // Podrías pasar el resultado a Dart si quieres
+        return requestCode == PERMISSION_REQUEST_CODE
     }
 
-    override fun onHeadingChanged(timestamp: Long, heading: Double) {
-        val data = mapOf("timestamp" to timestamp, "heading" to heading)
-        handler.post {
-            events.headingSink?.success(data)
-            channel.invokeMethod("onHeadingChanged", data)
-        }
-    }
-
-    // -------------------------
-    // Geofence handling (API 3.7.1)
-    // -------------------------
-    override fun onGeofencesTriggered(event: IAGeofenceEvent) {
-        // Nota: si tu SDK expone getGeofenceTransition()/getTriggeringGeofences(),
-        // cámbialo por esos nombres. Muchas versiones Kotlin convierten a properties.
-        val transition = try {
-            event.geofenceTransition
-        } catch (e: NoSuchMethodError) {
-            // Fallback si la API es getGeofenceTransition()
-            try { event.javaClass.getMethod("getGeofenceTransition").invoke(event) as Int } catch (_: Exception) { -1 }
-        }
-
-        val type = when (transition) {
-            IAGeofence.GEOFENCE_TRANSITION_ENTER -> "enter"
-            IAGeofence.GEOFENCE_TRANSITION_EXIT -> "exit"
-            else -> "unknown"
-        }
-
-        // Obtener lista de geofences activadas
-        val triggering = try {
-            event.triggeringGeofences
-        } catch (e: NoSuchMethodError) {
-            // Fallback para getTriggeringGeofences()
-            try { event.javaClass.getMethod("getTriggeringGeofences").invoke(event) as List<*> } catch (_: Exception) { emptyList<Any>() }
-        }
-
-        // Iterar y enviar a Dart
-        (triggering as? List<*>)?.forEach { gf ->
-            if (gf is IAGeofence) {
-                val data = mapOf("type" to type, "geofence" to IAGeofence2Map(gf))
-                handler.post {
-                    events.geofenceSink?.success(data)
-                    channel.invokeMethod("onGeofenceEvent", data)
-                }
-            }
-        }
-    }
-
-    // -------------------------
-    // Permissions callback
-    // -------------------------
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ): Boolean {
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            // Si quieres, puedes notificar a Dart con el resultado.
-            return true
-        }
-        return false
-    }
-
-    // -------------------------
-    // API pública expuesta a Dart
-    // -------------------------
-    @MainThread
     fun initialize(apiKey: String, apiSecret: String) {
         handler.post {
             val extras = Bundle().apply {
@@ -326,165 +92,66 @@ private class IAFlutterEngine(
             }
             locationManager?.destroy()
             locationManager = IALocationManager.create(context, extras)
-            // no registramos listeners aquí; se hacen en startPositioning()
-            requestPermissions()
         }
-    }
-
-    fun getTraceId(): String? = locationManager?.extraInfo?.traceId
-
-    fun lockIndoors(locked: Boolean) {
-        handler.post { locationManager?.lockIndoors(locked) }
-    }
-
-    fun lockFloor(floor: Int) {
-        handler.post { locationManager?.lockFloor(floor) }
-    }
-
-    fun unlockFloor() {
-        handler.post { locationManager?.unlockFloor() }
     }
 
     fun startPositioning() {
         handler.post {
-            locationManager?.let {
-                it.registerRegionListener(this)
-                it.registerOrientationListener(orientationRequest, this)
-                it.requestLocationUpdates(locationRequest, this)
-            }
+            locationManager?.requestLocationUpdates(IALocationRequest.create(), this)
         }
     }
 
     fun stopPositioning() {
         handler.post {
-            locationManager?.let {
-                it.removeLocationUpdates(this)
-                it.unregisterOrientationListener(this)
-                it.unregisterRegionListener(this)
-                if (geofencesRegistered) {
-                    it.removeGeofenceUpdates(this)
-                    geofencesRegistered = false
-                }
-            }
+            locationManager?.removeLocationUpdates(this)
         }
-    }
-
-    private fun requestPermissions() {
-        activityBinding?.activity?.requestPermissions(getRequiredPermissions(), PERMISSION_REQUEST_CODE)
     }
 
     fun detach() {
         handler.post {
-            stopPositioning()
             locationManager?.destroy()
-            locationManager = null
+            channel.setMethodCallHandler(null)
         }
     }
 }
 
-// ------------------------------------------------------------------
-// Plugin (Embedding V2) con MethodChannel + EventChannels
-// ------------------------------------------------------------------
 class IAFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
+    private lateinit var engine: IAFlutterEngine
+    private lateinit var channel: MethodChannel
 
-    private var engine: IAFlutterEngine? = null
-    private var methodChannel: MethodChannel? = null
-    private val events = IAEventBridge()
-
-    // Event channels
-    private var statusCh: EventChannel? = null
-    private var locationCh: EventChannel? = null
-    private var regionCh: EventChannel? = null
-    private var geofenceCh: EventChannel? = null
-    private var orientationCh: EventChannel? = null
-    private var headingCh: EventChannel? = null
-
-    override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        methodChannel = MethodChannel(binding.binaryMessenger, "com.indooratlas.flutter")
-        methodChannel?.setMethodCallHandler(this)
-
-        // Crear EventChannels
-        statusCh = EventChannel(binding.binaryMessenger, "com.indooratlas.flutter/events/status")
-        locationCh = EventChannel(binding.binaryMessenger, "com.indooratlas.flutter/events/location")
-        regionCh = EventChannel(binding.binaryMessenger, "com.indooratlas.flutter/events/region")
-        geofenceCh = EventChannel(binding.binaryMessenger, "com.indooratlas.flutter/events/geofence")
-        orientationCh = EventChannel(binding.binaryMessenger, "com.indooratlas.flutter/events/orientation")
-        headingCh = EventChannel(binding.binaryMessenger, "com.indooratlas.flutter/events/heading")
-
-        fun mkHandler(setSink: (EventSink?) -> Unit) = object : StreamHandler {
-            override fun onListen(arguments: Any?, events: EventSink?) { setSink(events) }
-            override fun onCancel(arguments: Any?) { setSink(null) }
-        }
-
-        statusCh?.setStreamHandler(mkHandler { events.statusSink = it })
-        locationCh?.setStreamHandler(mkHandler { events.locationSink = it })
-        regionCh?.setStreamHandler(mkHandler { events.regionSink = it })
-        geofenceCh?.setStreamHandler(mkHandler { events.geofenceSink = it })
-        orientationCh?.setStreamHandler(mkHandler { events.orientationSink = it })
-        headingCh?.setStreamHandler(mkHandler { events.headingSink = it })
-
-        engine = IAFlutterEngine(binding.applicationContext, methodChannel!!, events)
+    override fun onAttachedToEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
+        channel = MethodChannel(binding.binaryMessenger, "com.indooratlas.flutter")
+        channel.setMethodCallHandler(this)
+        engine = IAFlutterEngine(binding.applicationContext, channel)
     }
 
-    override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        methodChannel?.setMethodCallHandler(null)
-        methodChannel = null
-
-        statusCh?.setStreamHandler(null); statusCh = null
-        locationCh?.setStreamHandler(null); locationCh = null
-        regionCh?.setStreamHandler(null); regionCh = null
-        geofenceCh?.setStreamHandler(null); geofenceCh = null
-        orientationCh?.setStreamHandler(null); orientationCh = null
-        headingCh?.setStreamHandler(null); headingCh = null
-
-        events.clearAll()
-
-        engine?.detach()
-        engine = null
+    override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
+        engine.detach()
     }
 
-    override fun onMethodCall(call: MethodCall, result: Result) {
-        when (call.method) {
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        engine.activityBinding = binding
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() { engine.activityBinding = null }
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        engine.activityBinding = binding
+    }
+    override fun onDetachedFromActivity() { engine.activityBinding = null }
+
+    override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
+        when(call.method) {
             "initialize" -> {
-                val apiKey = call.argument<String>("apiKey")
-                val apiSecret = call.argument<String>("apiSecret")
-                if (!apiKey.isNullOrEmpty() && !apiSecret.isNullOrEmpty()) {
-                    engine?.initialize(apiKey, apiSecret)
+                val key = call.argument<String>("apiKey")
+                val secret = call.argument<String>("apiSecret")
+                if (key != null && secret != null) {
+                    engine.initialize(key, secret)
                     result.success(null)
-                } else {
-                    result.error("INVALID_ARGS", "apiKey or apiSecret is null/empty", null)
-                }
+                } else result.error("INVALID_ARGS", "apiKey or apiSecret missing", null)
             }
-            "getTraceId" -> result.success(engine?.getTraceId())
-            "lockIndoors" -> {
-                (call.arguments as? List<*>)?.getOrNull(0)?.let { if (it is Boolean) engine?.lockIndoors(it) }
-                result.success(null)
-            }
-            "lockFloor" -> {
-                (call.arguments as? List<*>)?.getOrNull(0)?.let { if (it is Int) engine?.lockFloor(it) }
-                result.success(null)
-            }
-            "unlockFloor" -> { engine?.unlockFloor(); result.success(null) }
-            "startPositioning" -> { engine?.startPositioning(); result.success(null) }
-            "stopPositioning" -> { engine?.stopPositioning(); result.success(null) }
+            "startPositioning" -> { engine.startPositioning(); result.success(null) }
+            "stopPositioning" -> { engine.stopPositioning(); result.success(null) }
             else -> result.notImplemented()
         }
-    }
-
-    // ActivityAware
-    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
-        engine?.activityBinding = binding
-    }
-
-    override fun onDetachedFromActivity() {
-        engine?.activityBinding = null
-    }
-
-    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
-        engine?.activityBinding = binding
-    }
-
-    override fun onDetachedFromActivityForConfigChanges() {
-        engine?.activityBinding = null
     }
 }
