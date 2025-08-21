@@ -1,7 +1,12 @@
+// ignore_for_file: avoid_print
+
 import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+/// ===============================
+/// Modelos básicos
+/// ===============================
 class IACoordinate {
   final double latitude, longitude;
   const IACoordinate(this.latitude, this.longitude);
@@ -16,65 +21,6 @@ class IAPoint {
   const IAPoint.zero()
       : x = 0,
         y = 0;
-}
-
-class IALocation extends IACoordinate {
-  final IAPoint? pixel;
-  final IAFloorplan? floorplan;
-  final double accuracy;
-  final double heading;
-  final double altitude;
-  final int floor;
-  final double floorCertainty;
-  final double velocity;
-  final DateTime timestamp;
-
-  IALocation.fromMap(Map map)
-      : accuracy = map['accuracy'],
-        heading = map['heading'],
-        altitude = map['altitude'],
-        floor = map['flr'],
-        floorCertainty = map['floorCertainty'],
-        velocity = map['velocity'],
-        timestamp = DateTime.fromMillisecondsSinceEpoch(map['timestamp']),
-        floorplan = map.containsKey('region')
-            ? _Region.fromMap(map['region']).floorplan
-            : null,
-        pixel = (map.containsKey('pix_x') && map.containsKey('pix_y'))
-            ? IAPoint(map['pix_x'], map['pix_y'])
-            : null,
-        super(map['latitude'], map['longitude']);
-}
-
-enum IAStatus {
-  outOfService,
-  temporarilyUnavailable,
-  available,
-  limited,
-}
-
-class IAGeofence {
-  final String id;
-  final String name;
-  final int floor;
-  late final List<IACoordinate> coordinates;
-  final String payload;
-
-  IAGeofence.fromGeoJson(Map map)
-      : id = map['id'],
-        name = map['properties']['name'] ?? '',
-        floor = map['properties']['floor'] ?? 0,
-        payload = map['properties']['payload'] ?? '' {
-    List<IACoordinate> coords = [];
-    if (map['geometry'] != null &&
-        map['geometry']['coordinates'] != null &&
-        map['geometry']['coordinates'][0] is List) {
-      for (var coord in map['geometry']['coordinates'][0]) {
-        coords.add(IACoordinate(coord[1], coord[0]));
-      }
-    }
-    this.coordinates = coords;
-  }
 }
 
 class IAFloorplan {
@@ -99,64 +45,118 @@ class IAFloorplan {
         metersToPixels = map['metersToPixels'],
         center = IACoordinate(map['center'][1], map['center'][0]);
 
-  Future<IAPoint> pointFromCoordinate(IACoordinate coord) async {
-    // TODO: native side not implemented
-    throw ('not implemented');
-  }
+  // Placeholders: requeriría exponer métodos nativos adicionales
+  Future<IAPoint> pointFromCoordinate(IACoordinate coord) async =>
+      throw ('not implemented');
+  Future<IACoordinate> coordinateFromPoint(IAPoint point) async =>
+      throw ('not implemented');
+}
 
-  Future<IACoordinate> coordinateFromPoint(IAPoint point) async {
-    // TODO: native side not implemented
-    throw ('not implemented');
-  }
+class IAGeofence {
+  final String id;
+  final String name;
+  final int floor;
+  final List<IACoordinate> coordinates;
+  final String payload;
+
+  IAGeofence.fromGeoJson(Map map)
+      : id = map['id'],
+        name = map['properties']?['name'] ?? '',
+        floor = map['properties']?['floor'] ?? 0,
+        payload = map['properties']?['payload'] ?? '',
+        coordinates = (() {
+          final out = <IACoordinate>[];
+          final coords = map['geometry']?['coordinates'];
+          if (coords is List && coords.isNotEmpty && coords[0] is List) {
+            for (var c in (coords[0] as List)) {
+              if (c is List && c.length >= 2) {
+                out.add(IACoordinate(c[1] * 1.0, c[0] * 1.0));
+              }
+            }
+          }
+          return out;
+        })();
 }
 
 class IAVenue {
   final String id;
   final String name;
-  late final List<IAFloorplan> floorplans;
-  late final List<IAGeofence> geofences;
+  final List<IAFloorplan> floorplans;
+  final List<IAGeofence> geofences;
 
   IAVenue.fromMap(Map map)
       : id = map['id'],
-        name = map['name'] {
-    List<IAFloorplan> plans = [];
-    if (map.containsKey('floorPlans')) {
-      for (var plan in map['floorPlans']) {
-        plans.add(IAFloorplan.fromMap(plan));
-      }
-    }
-    this.floorplans = plans;
-    List<IAGeofence> fences = [];
-    if (map.containsKey('geofences')) {
-      for (var fence in map['geofences']) {
-        fences.add(IAGeofence.fromGeoJson(fence));
-      }
-    }
-    this.geofences = fences;
-  }
+        name = map['name'],
+        floorplans = (() {
+          final out = <IAFloorplan>[];
+          if (map.containsKey('floorPlans')) {
+            for (var plan in (map['floorPlans'] as List)) {
+              out.add(IAFloorplan.fromMap(Map<String, dynamic>.from(plan)));
+            }
+          }
+          return out;
+        })(),
+        geofences = (() {
+          final out = <IAGeofence>[];
+          if (map.containsKey('geofences')) {
+            for (var fence in (map['geofences'] as List)) {
+              out.add(IAGeofence.fromGeoJson(Map<String, dynamic>.from(fence)));
+            }
+          }
+          return out;
+        })();
 }
 
 class _Region {
   final String id;
   final int type;
   final DateTime timestamp;
-  late final IAFloorplan? floorplan;
-  late final IAVenue? venue;
+  final IAFloorplan? floorplan;
+  final IAVenue? venue;
 
   _Region.fromMap(Map map)
       : id = map['regionId'],
         type = map['regionType'],
-        timestamp = DateTime.fromMillisecondsSinceEpoch(map['timestamp']) {
-    floorplan =
-        map.containsKey('floorPlan') ? IAFloorplan.fromMap(map['floorPlan']) : null;
-    venue = map.containsKey('venue') ? IAVenue.fromMap(map['venue']) : null;
-  }
+        timestamp = DateTime.fromMillisecondsSinceEpoch(map['timestamp']),
+        floorplan = map.containsKey('floorPlan')
+            ? IAFloorplan.fromMap(Map<String, dynamic>.from(map['floorPlan']))
+            : null,
+        venue = map.containsKey('venue')
+            ? IAVenue.fromMap(Map<String, dynamic>.from(map['venue']))
+            : null;
 }
 
-enum IAPositioningMode {
-  highAccuracy,
-  lowPower,
+class IALocation extends IACoordinate {
+  final IAPoint? pixel;
+  final IAFloorplan? floorplan;
+  final double accuracy;
+  final double heading;
+  final double altitude;
+  final int floor;
+  final double floorCertainty;
+  final double velocity;
+  final DateTime timestamp;
+
+  IALocation.fromMap(Map map)
+      : accuracy = (map['accuracy'] ?? 0).toDouble(),
+        heading = (map['heading'] ?? 0).toDouble(),
+        altitude = (map['altitude'] ?? 0).toDouble(),
+        floor = (map['flr'] ?? 0).toInt(),
+        floorCertainty = (map['floorCertainty'] ?? 0).toDouble(),
+        velocity = (map['velocity'] ?? 0).toDouble(),
+        timestamp = DateTime.fromMillisecondsSinceEpoch(map['timestamp'] ?? 0),
+        floorplan = map.containsKey('region')
+            ? _Region.fromMap(Map<String, dynamic>.from(map['region'])).floorplan
+            : null,
+        pixel = (map.containsKey('pix_x') && map.containsKey('pix_y'))
+            ? IAPoint((map['pix_x'] ?? 0).toDouble(), (map['pix_y'] ?? 0).toDouble())
+            : null,
+        super((map['latitude'] ?? 0).toDouble(), (map['longitude'] ?? 0).toDouble());
 }
+
+enum IAStatus { outOfService, temporarilyUnavailable, available, limited }
+
+enum IAPositioningMode { highAccuracy, lowPower }
 
 class IAConfiguration {
   final String apiKey;
@@ -189,250 +189,288 @@ class IAConfiguration {
       );
 }
 
-abstract class IAListener {
-  final UniqueKey key = UniqueKey();
-  void onStatus(IAStatus status, String message);
-  void onLocation(IALocation location);
-  void onVenue(bool enter, IAVenue venue);
-  void onFloorplan(bool enter, IAFloorplan floorplan);
-  void onGeofence(bool enter, IAGeofence geofence);
-  void onOrientation(double x, double y, double z, double w);
-  void onHeading(double heading);
-}
-
+/// ===============================
+/// Canal nativo (Method + Event)
+/// ===============================
 class IndoorAtlas {
-  static const MethodChannel _ch = MethodChannel('com.indooratlas.flutter');
+  // MethodChannel para comandos
+  static const MethodChannel _mc = MethodChannel('com.indooratlas.flutter');
+
+  // EventChannels para streams
+  static const EventChannel _ecStatus =
+      EventChannel('com.indooratlas.flutter/events/status');
+  static const EventChannel _ecLocation =
+      EventChannel('com.indooratlas.flutter/events/location');
+  static const EventChannel _ecRegion =
+      EventChannel('com.indooratlas.flutter/events/region');
+  static const EventChannel _ecGeofence =
+      EventChannel('com.indooratlas.flutter/events/geofence');
+  static const EventChannel _ecOrientation =
+      EventChannel('com.indooratlas.flutter/events/orientation');
+  static const EventChannel _ecHeading =
+      EventChannel('com.indooratlas.flutter/events/heading');
 
   static bool _initialized = false;
   static IAConfiguration? _currentConfig;
-  static String? _traceId;
-  static final Set<IAListener> _listeners = Set.identity();
 
-  static IAVenue? _currentVenue;
-  static IAFloorplan? _currentFloorplan;
-  static IALocation? _currentLocation;
+  static String? _traceIdCache;
 
-  static IAConfiguration? get configuration => _currentConfig;
-  static String? get traceId => _traceId;
-  static IAVenue? get venue => _currentVenue;
-  static IAFloorplan? get floorplan => _currentFloorplan;
-  static IALocation? get location => _currentLocation;
+  // ==========================
+  // Streams públicos (broadcast)
+  // ==========================
+  static Stream<({IAStatus status, String message})> get statusStream =>
+      _ecStatus.receiveBroadcastStream().map((dynamic e) {
+        final m = Map<String, dynamic>.from(e as Map);
+        final status = IAStatus.values[(m['status'] ?? 0).toInt()];
+        final message = (m['message'] ?? '') as String;
+        return (status: status, message: message);
+      });
 
-  static Future<T?> _invoke<T>(String method, [dynamic arguments]) {
-    if (!_initialized && method != 'initialize') {
-      throw ('IndoorAtlas SDK not initialized. Call IndoorAtlas.configure() first.');
-    }
-    return _ch.invokeMethod<T>(method, arguments);
-  }
+  static Stream<IALocation> get locationStream =>
+      _ecLocation.receiveBroadcastStream().map((dynamic e) {
+        return IALocation.fromMap(Map<String, dynamic>.from(e as Map));
+      });
 
-  static void _setupMethodCallHandler() {
-    _ch.setMethodCallHandler((call) async {
-      try {
-        switch (call.method) {
-          case 'onStatusChanged':
-            final status = IAStatus.values[call.arguments['status']];
-            final message = call.arguments['message'] as String;
-            for (var l in _listeners) {l.onStatus(status, message);}
-            break;
-          case 'onLocationChanged':
-            final loc = IALocation.fromMap(call.arguments);
-            _currentLocation = loc;
-            for (var l in _listeners) {l.onLocation(loc);}
-            break;
-          case 'onEnterRegion':
-            _dispatchRegionEvent(true, _Region.fromMap(call.arguments));
-            break;
-          case 'onExitRegion':
-            _dispatchRegionEvent(false, _Region.fromMap(call.arguments));
-            break;
-          case 'onGeofenceEvent':
-            final geofence = IAGeofence.fromGeoJson(call.arguments['geofence']);
-            final enter = call.arguments['type'] == 'enter';
-            for (var l in _listeners) {l.onGeofence(enter, geofence);}
-            break;
-          case 'onOrientationChanged':
-            final args = call.arguments;
-            for (var l in _listeners) {l.onOrientation(args['x'], args['y'], args['z'], args['w']);}
-            break;
-          case 'onHeadingChanged':
-            final args = call.arguments;
-            for (var l in _listeners) {l.onHeading(args['heading']);}
-            break;
-          default:
-            throw MissingPluginException('Method ${call.method} not implemented.');
-        }
-      } catch (e) {
-        print('IndoorAtlas Flutter Error: $e');
-      }
-    });
-  }
+  /// Emite: { enter: bool, region: Map }
+  static Stream<({bool enter, _Region region})> get regionStream =>
+      _ecRegion.receiveBroadcastStream().map((dynamic e) {
+        final m = Map<String, dynamic>.from(e as Map);
+        return (
+          enter: (m['enter'] ?? false) as bool,
+          region: _Region.fromMap(Map<String, dynamic>.from(m['region'] ?? {}))
+        );
+      });
 
-  static void _dispatchRegionEvent(bool enter, _Region region) {
-    if (region.venue != null) {
-      _currentVenue = enter ? region.venue : null;
-      for (var l in _listeners) {l.onVenue(enter, region.venue!);}
-    }
-    if (region.floorplan != null) {
-      _currentFloorplan = enter ? region.floorplan : null;
-      for (var l in _listeners) {l.onFloorplan(enter, region.floorplan!);}
-    }
-  }
-  
-  static void _resetState() {
-    if (_currentFloorplan != null) {
-      for (var l in _listeners) {l.onFloorplan(false, _currentFloorplan!);}
-      _currentFloorplan = null;
-    }
-    if (_currentVenue != null) {
-      for (var l in _listeners) {l.onVenue(false, _currentVenue!);}
-      _currentVenue = null;
-    }
-    _currentLocation = null;
-    _traceId = null;
-  }
+  /// Emite: { type: 'enter'|'exit', geofence: GeoJSON }
+  static Stream<({bool enter, IAGeofence geofence})> get geofenceStream =>
+      _ecGeofence.receiveBroadcastStream().map((dynamic e) {
+        final m = Map<String, dynamic>.from(e as Map);
+        final isEnter = (m['type'] ?? '') == 'enter';
+        return (enter: isEnter, geofence: IAGeofence.fromGeoJson(m['geofence']));
+      });
 
+  /// Emite cuaternión (x,y,z,w) + timestamp
+  static Stream<({double x, double y, double z, double w, int timestamp})>
+      get orientationStream =>
+          _ecOrientation.receiveBroadcastStream().map((dynamic e) {
+            final m = Map<String, dynamic>.from(e as Map);
+            return (
+              x: (m['x'] ?? 0).toDouble(),
+              y: (m['y'] ?? 0).toDouble(),
+              z: (m['z'] ?? 0).toDouble(),
+              w: (m['w'] ?? 0).toDouble(),
+              timestamp: (m['timestamp'] ?? 0).toInt(),
+            );
+          });
+
+  static Stream<({double heading, int timestamp})> get headingStream =>
+      _ecHeading.receiveBroadcastStream().map((dynamic e) {
+        final m = Map<String, dynamic>.from(e as Map);
+        return (
+          heading: (m['heading'] ?? 0).toDouble(),
+          timestamp: (m['timestamp'] ?? 0).toInt()
+        );
+      });
+
+  // ==========================
+  // API de control
+  // ==========================
   static Future<void> configure(IAConfiguration config) async {
     if (!_initialized) {
-      await _invoke('initialize', {
+      await _mc.invokeMethod('initialize', {
         'apiKey': config.apiKey,
         'apiSecret': config.apiSecret,
       });
-      _setupMethodCallHandler();
       _initialized = true;
     }
-
     _currentConfig = config;
-    _resetState();
 
-    if (_listeners.isEmpty) {
-      await _invoke('stopPositioning');
+    // Aplica locks y arranca posicionamiento (siempre, para simplificar)
+    await _mc.invokeMethod('startPositioning');
+    await _mc.invokeMethod('lockIndoors', [config.indoorLock]);
+    if (config.floorLock != null) {
+      await _mc.invokeMethod('lockFloor', [config.floorLock]);
     } else {
-      await _invoke('startPositioning');
-      await _invoke('lockIndoors', [config.indoorLock]);
-      if (config.floorLock != null) {
-        await _invoke('lockFloor', [config.floorLock!]);
-      } else {
-        await _invoke('unlockFloor');
-      }
+      await _mc.invokeMethod('unlockFloor');
     }
-     _traceId = await _invoke<String>('getTraceId');
+    _traceIdCache = await _mc.invokeMethod<String>('getTraceId');
   }
 
-  static void subscribe(IAListener listener) {
-    if (_listeners.add(listener)) {
-      if (_currentVenue != null) listener.onVenue(true, _currentVenue!);
-      if (_currentFloorplan != null) listener.onFloorplan(true, _currentFloorplan!);
-      if (_currentLocation != null) listener.onLocation(_currentLocation!);
-
-      if (_listeners.length == 1 && _currentConfig != null) {
-        configure(_currentConfig!);
-      }
-    }
+  static Future<void> start() async {
+    _assertInitialized();
+    await _mc.invokeMethod('startPositioning');
   }
 
-  static void unsubscribe(IAListener listener) {
-    if (_listeners.remove(listener)) {
-      if (_listeners.isEmpty) {
-        _invoke('stopPositioning');
-        _resetState();
-      }
+  static Future<void> stop() async {
+    _assertInitialized();
+    await _mc.invokeMethod('stopPositioning');
+  }
+
+  static Future<void> lockIndoors(bool locked) async {
+    _assertInitialized();
+    await _mc.invokeMethod('lockIndoors', [locked]);
+  }
+
+  static Future<void> lockFloor(int floor) async {
+    _assertInitialized();
+    await _mc.invokeMethod('lockFloor', [floor]);
+  }
+
+  static Future<void> unlockFloor() async {
+    _assertInitialized();
+    await _mc.invokeMethod('unlockFloor');
+  }
+
+  static Future<String?> get traceId async {
+    _assertInitialized();
+    _traceIdCache ??= await _mc.invokeMethod<String>('getTraceId');
+    return _traceIdCache;
+  }
+
+  static IAConfiguration? get configuration => _currentConfig;
+
+  static void _assertInitialized() {
+    if (!_initialized) {
+      throw StateError(
+          'IndoorAtlas SDK not initialized. Call IndoorAtlas.configure() first.');
     }
   }
 }
 
+/// ===============================
+/// Widget helper opcional (callbacks)
+/// ===============================
 typedef IAOnStatusCb = void Function(IAStatus status, String message);
 typedef IAOnVenueCb = void Function(bool enter, IAVenue venue);
 typedef IAOnFloorplanCb = void Function(bool enter, IAFloorplan floorplan);
 typedef IAOnGeofenceCb = void Function(bool enter, IAGeofence geofence);
 typedef IAOnOrientationCb = void Function(double x, double y, double z, double w);
 
-class IACallbackListener extends IAListener {
-  final IAOnStatusCb? onStatusCb;
-  final ValueSetter<IALocation>? onLocationCb;
-  final IAOnVenueCb? onVenueCb;
-  final IAOnFloorplanCb? onFloorplanCb;
-  final IAOnGeofenceCb? onGeofenceCb;
-  final IAOnOrientationCb? onOrientationCb;
-  final ValueSetter<double>? onHeadingCb;
-
-  IACallbackListener({
-    this.onStatusCb,
-    this.onLocationCb,
-    this.onVenueCb,
-    this.onFloorplanCb,
-    this.onGeofenceCb,
-    this.onOrientationCb,
-    this.onHeadingCb,
-  });
-
-  @override void onStatus(IAStatus status, String message) => onStatusCb?.call(status, message);
-  @override void onLocation(IALocation position) => onLocationCb?.call(position);
-  @override void onVenue(bool enter, IAVenue venue) => onVenueCb?.call(enter, venue);
-  @override void onFloorplan(bool enter, IAFloorplan floorplan) => onFloorplanCb?.call(enter, floorplan);
-  @override void onGeofence(bool enter, IAGeofence geofence) => onGeofenceCb?.call(enter, geofence);
-  @override void onOrientation(double x, double y, double z, double w) => onOrientationCb?.call(x, y, z, w);
-  @override void onHeading(double heading) => onHeadingCb?.call(heading);
-}
-
 class IndoorAtlasListener extends StatefulWidget {
   final Widget child;
-  final IACallbackListener listener;
   final bool enabled;
 
-  IndoorAtlasListener({
+  final IAOnStatusCb? onStatus;
+  final ValueSetter<IALocation>? onLocation;
+  final IAOnVenueCb? onVenue;
+  final IAOnFloorplanCb? onFloorplan;
+  final IAOnGeofenceCb? onGeofence;
+  final IAOnOrientationCb? onOrientation;
+  final ValueSetter<double>? onHeading;
+
+  const IndoorAtlasListener({
     Key? key,
     this.enabled = true,
     this.child = const SizedBox.shrink(),
-    IAOnStatusCb? onStatus,
-    ValueSetter<IALocation>? onLocation,
-    IAOnVenueCb? onVenue,
-    IAOnFloorplanCb? onFloorplan,
-    IAOnGeofenceCb? onGeofence,
-    IAOnOrientationCb? onOrientation,
-    ValueSetter<double>? onHeading,
-  })  : listener = IACallbackListener(
-          onStatusCb: onStatus,
-          onLocationCb: onLocation,
-          onVenueCb: onVenue,
-          onFloorplanCb: onFloorplan,
-          onGeofenceCb: onGeofence,
-          onOrientationCb: onOrientation,
-          onHeadingCb: onHeading,
-        ),
-        super(key: key);
+    this.onStatus,
+    this.onLocation,
+    this.onVenue,
+    this.onFloorplan,
+    this.onGeofence,
+    this.onOrientation,
+    this.onHeading,
+  }) : super(key: key);
 
   @override
   State<StatefulWidget> createState() => _IndoorAtlasListenerState();
 }
 
 class _IndoorAtlasListenerState extends State<IndoorAtlasListener> {
+  StreamSubscription? _subStatus, _subLoc, _subRegion, _subFence, _subOrient, _subHeading;
+
   @override
   void initState() {
     super.initState();
-    if (widget.enabled) {
-      IndoorAtlas.subscribe(widget.listener);
-    }
+    if (widget.enabled) _subscribe();
   }
 
   @override
-  void didUpdateWidget(IndoorAtlasListener oldWidget) {
+  void didUpdateWidget(covariant IndoorAtlasListener oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.enabled != oldWidget.enabled || widget.listener != oldWidget.listener) {
-      if (oldWidget.enabled) IndoorAtlas.unsubscribe(oldWidget.listener);
-      if (widget.enabled) IndoorAtlas.subscribe(widget.listener);
+    if (widget.enabled != oldWidget.enabled) {
+      if (oldWidget.enabled) _unsubscribe();
+      if (widget.enabled) _subscribe();
     }
+  }
+
+  void _subscribe() {
+    _subStatus = IndoorAtlas.statusStream.listen((e) {
+      widget.onStatus?.call(e.status, e.message);
+    });
+
+    _subLoc = IndoorAtlas.locationStream.listen((loc) {
+      widget.onLocation?.call(loc);
+    });
+
+    _subRegion = IndoorAtlas.regionStream.listen((e) {
+      if (e.region.venue != null) {
+        widget.onVenue?.call(e.enter, e.region.venue!);
+      }
+      if (e.region.floorplan != null) {
+        widget.onFloorplan?.call(e.enter, e.region.floorplan!);
+      }
+    });
+
+    _subFence = IndoorAtlas.geofenceStream.listen((e) {
+      widget.onGeofence?.call(e.enter, e.geofence);
+    });
+
+    _subOrient = IndoorAtlas.orientationStream.listen((o) {
+      widget.onOrientation?.call(o.x, o.y, o.z, o.w);
+    });
+
+    _subHeading = IndoorAtlas.headingStream.listen((h) {
+      widget.onHeading?.call(h.heading);
+    });
+  }
+
+  void _unsubscribe() {
+    _subStatus?.cancel(); _subStatus = null;
+    _subLoc?.cancel(); _subLoc = null;
+    _subRegion?.cancel(); _subRegion = null;
+    _subFence?.cancel(); _subFence = null;
+    _subOrient?.cancel(); _subOrient = null;
+    _subHeading?.cancel(); _subHeading = null;
   }
 
   @override
   void dispose() {
-    if (widget.enabled) {
-      IndoorAtlas.unsubscribe(widget.listener);
-    }
+    _unsubscribe();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) {
-    return widget.child;
-  }
+  Widget build(BuildContext context) => widget.child;
 }
+
+/// ===============================
+/// Ejemplo de uso
+/// ===============================
+///
+/// void main() async {
+///   WidgetsFlutterBinding.ensureInitialized();
+///   await IndoorAtlas.configure(const IAConfiguration(
+///     apiKey: 'TU_API_KEY',
+///     apiSecret: 'TU_API_SECRET',
+///     indoorLock: true,
+///     floorLock: null,
+///   ));
+///
+///   IndoorAtlas.locationStream.listen((loc) {
+///     print('IA Location: ${loc.latitude}, ${loc.longitude}, flr=${loc.floor}');
+///   });
+///
+///   runApp(MyApp());
+/// }
+///
+/// class MyApp extends StatelessWidget {
+///   @override
+///   Widget build(BuildContext context) {
+///     return IndoorAtlasListener(
+///       onStatus: (s, m) => print('Status: $s $m'),
+///       onHeading: (h) => print('Heading: $h'),
+///       onGeofence: (enter, g) => print('Geofence ${enter ? 'enter' : 'exit'}: ${g.name}'),
+///       child: const SizedBox.shrink(),
+///     );
+///   }
+/// }
