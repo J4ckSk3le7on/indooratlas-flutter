@@ -190,10 +190,10 @@ class _MyHomePageState extends State<MyHomePage> {
                           Expanded(
                             child: ElevatedButton(
                               onPressed: () async {
-                                // Ejemplo: Solicitar monitoreo de geofences específicas
-                                await IndoorAtlas.requestGeofences(['demo_geofence_1', 'demo_geofence_2']);
+                                // Nota: Las geofences se obtienen automáticamente desde la región actual
+                                // Este botón es para demostración futura
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Solicitando monitoreo de geofences...')),
+                                  SnackBar(content: Text('Las geofences se obtienen automáticamente desde la región actual')),
                                 );
                               },
                               child: Text('Request Geofences'),
@@ -203,9 +203,10 @@ class _MyHomePageState extends State<MyHomePage> {
                           Expanded(
                             child: ElevatedButton(
                               onPressed: () async {
-                                await IndoorAtlas.removeGeofences();
+                                // Nota: Las geofences se obtienen automáticamente desde la región actual
+                                // Este botón es para demostración futura
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Deteniendo monitoreo de geofences...')),
+                                  SnackBar(content: Text('Las geofences se obtienen automáticamente desde la región actual')),
                                 );
                               },
                               child: Text('Remove Geofences'),

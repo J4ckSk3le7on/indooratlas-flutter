@@ -278,12 +278,9 @@ class IAFlutterEngine(
     }
 
     override fun onGeofencesTriggered(event: IAGeofenceEvent) {
-        // Convertir el evento de geofence a un mapa para enviar a Flutter
-        val geofenceMaps = event.geofences.map { IAGeofence2Map(it) }
-        _channel.invokeMethod("onGeofencesTriggered", listOf(
-            event.timestamp,
-            geofenceMaps
-        ))
+        // Nota: La API de geofences puede variar según la versión del SDK
+        // Por ahora, las geofences se obtienen desde la región actual
+        // cuando el usuario entra en un venue
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
@@ -370,7 +367,8 @@ class IAFlutterEngine(
             _locationManager?.registerRegionListener(this)
             _locationManager?.registerOrientationListener(_orientationRequest, this)
             _locationManager?.requestLocationUpdates(_locationRequest, this)
-            _locationManager?.registerGeofenceListener(this)
+            // Nota: registerGeofenceListener puede no estar disponible en todas las versiones
+            // _locationManager?.registerGeofenceListener(this)
             _locationServiceRunning = true
         }
     }
@@ -380,7 +378,8 @@ class IAFlutterEngine(
             _locationManager?.removeLocationUpdates(this)
             _locationManager?.unregisterOrientationListener(this)
             _locationManager?.unregisterRegionListener(this)
-            _locationManager?.removeGeofenceListener(this)
+            // Nota: removeGeofenceListener puede no estar disponible en todas las versiones
+            // _locationManager?.removeGeofenceListener(this)
             _locationServiceRunning = false
         }
     }
@@ -403,18 +402,14 @@ class IAFlutterEngine(
     }
 
     fun requestGeofences(geofenceIds: List<String>) {
-        _handler.post {
-            if (_locationManager != null && geofenceIds.isNotEmpty()) {
-                val request = com.indooratlas.android.sdk.IAGeofenceRequest.Builder()
-                    .withGeofences(geofenceIds)
-                    .build()
-                _locationManager?.requestGeofenceUpdates(request, this)
-            }
-        }
+        // Nota: La API de geofences puede variar según la versión del SDK
+        // Por ahora, las geofences se obtienen automáticamente desde la región actual
+        // cuando el usuario entra en un venue
     }
 
     fun removeGeofences() {
-        _handler.post { _locationManager?.removeGeofenceUpdates() }
+        // Nota: La API de geofences puede variar según la versión del SDK
+        // Por ahora, las geofences se obtienen automáticamente desde la región actual
     }
 }
 

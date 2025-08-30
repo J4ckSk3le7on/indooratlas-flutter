@@ -108,11 +108,15 @@ bool isInGeofence(String geofenceId) {
   return IndoorAtlas.geofences.any((g) => g.id == geofenceId);
 }
 
-// Solicitar monitoreo de geofences específicas
-await IndoorAtlas.requestGeofences(['geofence_id_1', 'geofence_id_2']);
+// Nota: Las geofences se obtienen automáticamente desde la región actual
+// cuando el usuario entra en un venue. Los métodos requestGeofences y removeGeofences
+// están disponibles para compatibilidad futura con la API de IndoorAtlas.
 
-// Detener monitoreo de geofences
-await IndoorAtlas.removeGeofences();
+// Solicitar monitoreo de geofences específicas (futuro)
+// await IndoorAtlas.requestGeofences(['geofence_id_1', 'geofence_id_2']);
+
+// Detener monitoreo de geofences (futuro)
+// await IndoorAtlas.removeGeofences();
 ```
 
 For help getting started with Flutter, view our
