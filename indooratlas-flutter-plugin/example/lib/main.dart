@@ -173,6 +173,50 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                 ),
               ),
+              SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Geofence Controls',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                // Ejemplo: Solicitar monitoreo de geofences específicas
+                                await IndoorAtlas.requestGeofences(['demo_geofence_1', 'demo_geofence_2']);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Solicitando monitoreo de geofences...')),
+                                );
+                              },
+                              child: Text('Request Geofences'),
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                await IndoorAtlas.removeGeofences();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Deteniendo monitoreo de geofences...')),
+                                );
+                              },
+                              child: Text('Remove Geofences'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),

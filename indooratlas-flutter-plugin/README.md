@@ -107,6 +107,12 @@ List<IAGeofence> venueGeofences = IndoorAtlas.getVenueGeofences();
 bool isInGeofence(String geofenceId) {
   return IndoorAtlas.geofences.any((g) => g.id == geofenceId);
 }
+
+// Solicitar monitoreo de geofences específicas
+await IndoorAtlas.requestGeofences(['geofence_id_1', 'geofence_id_2']);
+
+// Detener monitoreo de geofences
+await IndoorAtlas.removeGeofences();
 ```
 
 For help getting started with Flutter, view our

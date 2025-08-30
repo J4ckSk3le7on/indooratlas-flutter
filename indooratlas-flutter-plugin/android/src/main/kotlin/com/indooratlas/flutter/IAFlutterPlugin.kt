@@ -241,10 +241,25 @@ class IAFlutterEngine(
     // IARegion.Listener methods
     override fun onEnterRegion(@NonNull region: IARegion) {
         _channel.invokeMethod("onEnterRegion", listOf(IARegion2Map(region)))
+        
+        // Si la región tiene un venue, enviar las geofences del venue
+        if (region.venue != null && region.venue.geofences.isNotEmpty()) {
+            val geofenceMaps = region.venue.geofences.map { IAGeofence2Map(it) }
+            _channel.invokeMethod("onGeofencesTriggered", listOf(
+                System.currentTimeMillis(),
+                geofenceMaps
+            ))
+        }
     }
 
     override fun onExitRegion(@NonNull region: IARegion) {
         _channel.invokeMethod("onExitRegion", listOf(IARegion2Map(region)))
+        
+        // Limpiar las geofences cuando el usuario sale de la región
+        _channel.invokeMethod("onGeofencesTriggered", listOf(
+            System.currentTimeMillis(),
+            emptyList<Map<String, Any?>>()
+        ))
     }
 
     override fun onOrientationChange(timestamp: Long, @NonNull quaternion: DoubleArray) {
@@ -386,6 +401,21 @@ class IAFlutterEngine(
     fun stopWayfinding() {
         _handler.post { _locationManager?.removeWayfindingUpdates() }
     }
+
+    fun requestGeofences(geofenceIds: List<String>) {
+        _handler.post {
+            if (_locationManager != null && geofenceIds.isNotEmpty()) {
+                val request = com.indooratlas.android.sdk.IAGeofenceRequest.Builder()
+                    .withGeofences(geofenceIds)
+                    .build()
+                _locationManager?.requestGeofenceUpdates(request, this)
+            }
+        }
+    }
+
+    fun removeGeofences() {
+        _handler.post { _locationManager?.removeGeofenceUpdates() }
+    }
 }
 
 // --- Plugin class wiring MethodChannel to engine implementation ---
@@ -476,6 +506,15 @@ class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityA
                 }
                 "getTraceId" -> {
                     result.success(_engineImpl.getTraceId())
+                }
+                "requestGeofences" -> {
+                    val geofenceIds = (call.arguments as List<*>).map { it as String }
+                    _engineImpl.requestGeofences(geofenceIds)
+                    result.success(null)
+                }
+                "removeGeofences" -> {
+                    _engineImpl.removeGeofences()
+                    result.success(null)
                 }
                 else -> result.notImplemented()
             }

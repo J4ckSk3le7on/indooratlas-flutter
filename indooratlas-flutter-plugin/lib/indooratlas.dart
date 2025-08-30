@@ -314,6 +314,16 @@ class IndoorAtlas {
     return _traceId;
   }
 
+  /// Solicita monitoreo de geofences específicas
+  static Future<void> requestGeofences(List<String> geofenceIds) async {
+    await _ch.invokeMethod('requestGeofences', geofenceIds);
+  }
+
+  /// Detiene el monitoreo de geofences
+  static Future<void> removeGeofences() async {
+    await _ch.invokeMethod('removeGeofences');
+  }
+
   /// Obtiene las geofences del venue actual desde la ubicación
   static List<IAGeofence> getVenueGeofences() {
     if (_currentLocation?.floorplan == null) return [];
