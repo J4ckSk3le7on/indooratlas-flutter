@@ -150,6 +150,42 @@ class IALocation extends IACoordinate {
   }
 }
 
+class IAGeofence {
+  final String id;
+  final String name;
+  final int floor;
+  final String? payload;
+  final List<IACoordinate> coordinates;
+
+  IAGeofence({
+    required this.id,
+    required this.name,
+    required this.floor,
+    this.payload,
+    required this.coordinates,
+  });
+
+  factory IAGeofence.fromMap(Map map) {
+    final geometry = map['geometry'] as Map;
+    final coords = (geometry['coordinates'] as List).first as List;
+    
+    final coordinates = coords.map((coord) {
+      return IACoordinate(
+        (coord[1] as num).toDouble(), // latitud
+        (coord[0] as num).toDouble(), // longitud
+      );
+    }).toList();
+
+    return IAGeofence(
+      id: map['id'] ?? '',
+      name: (map['properties'] as Map)['name'] ?? '',
+      floor: (map['properties'] as Map)['floor'] ?? 0,
+      payload: (map['properties'] as Map)['payload'],
+      coordinates: coordinates,
+    );
+  }
+}
+
 // Minimal status enum
 enum IAStatus { outOfService, temporarilyUnavailable, available, limited }
 
@@ -163,6 +199,7 @@ class IndoorAtlas {
   static IALocation? _currentLocation;
   static String? _traceId;
   static final Set<IAListener> _listeners = Set.identity();
+  static final Set<IAGeofence> _currentGeofences = Set.identity();
 
   // initialize channel handler
   static void _ensureHandler() {
@@ -204,6 +241,21 @@ class IndoorAtlas {
             final args = call.arguments as List;
             final heading = (args[1] as num).toDouble();
             for (var l in _listeners) l.onHeading(heading);
+            break;
+          case 'onGeofencesTriggered':
+            final args = call.arguments as List;
+            // final timestamp = (args[0] as num).toInt(); // Timestamp disponible si se necesita
+            final geofenceMaps = (args[1] as List).cast<Map>();
+            
+            // Actualizar las geofences actuales
+            _currentGeofences.clear();
+            for (final geofenceMap in geofenceMaps) {
+              final geofence = IAGeofence.fromMap(geofenceMap);
+              _currentGeofences.add(geofence);
+            }
+            
+            // Notificar a todos los listeners
+            for (var l in _listeners) l.onGeofences(_currentGeofences.toList());
             break;
           default:
             if (debugEnabled) debugPrint('Unhandled method ${call.method}');
@@ -262,6 +314,15 @@ class IndoorAtlas {
     return _traceId;
   }
 
+  /// Obtiene las geofences del venue actual desde la ubicación
+  static List<IAGeofence> getVenueGeofences() {
+    if (_currentLocation?.floorplan == null) return [];
+    
+    // Las geofences del venue se obtienen desde la región actual
+    // Esto se maneja automáticamente cuando el usuario entra en una región
+    return _currentGeofences.toList();
+  }
+
   // setLocation: allow manual override (optional)
   static Future<void> setLocation(IACoordinate coord, {int floor = 0, double accuracy = 0}) async {
     await _ch.invokeMethod('setLocation', [coord.latitude, coord.longitude, floor, accuracy]);
@@ -271,6 +332,7 @@ class IndoorAtlas {
   static IALocation? get location => _currentLocation;
   static IAFloorplan? get floorplan => _currentFloorplan;
   static String? get traceId => _traceId;
+  static List<IAGeofence> get geofences => _currentGeofences.toList();
 
   // ----------------- Listener management -----------------
   static void subscribe(IAListener listener) {
@@ -281,6 +343,7 @@ class IndoorAtlas {
     // send current state
     if (_currentFloorplan != null) listener.onFloorplan(true, _currentFloorplan!);
     if (_currentLocation != null) listener.onLocation(_currentLocation!);
+    if (_currentGeofences.isNotEmpty) listener.onGeofences(_currentGeofences.toList());
 
     // ensure native positioning is running when first listener subscribes:
     if (_listeners.length == 1) {
@@ -310,6 +373,7 @@ abstract class IAListener {
   void onFloorplan(bool enter, IAFloorplan floorplan) {}
   void onOrientation(double x, double y, double z, double w) {}
   void onHeading(double heading) {}
+  void onGeofences(List<IAGeofence> geofences) {}
 }
 
 typedef IAOnStatusCb = void Function(IAStatus status, String message);
@@ -317,6 +381,7 @@ typedef ValueLocationSetter = void Function(IALocation loc);
 typedef IAOnFloorplanCb = void Function(bool enter, IAFloorplan floorplan);
 typedef IAOnOrientationCb = void Function(double x, double y, double z, double w);
 typedef ValueHeadingSetter = void Function(double heading);
+typedef IAOnGeofencesCb = void Function(List<IAGeofence> geofences);
 
 class IACallbackListener extends IAListener {
   final IAOnStatusCb? onStatusCb;
@@ -324,6 +389,7 @@ class IACallbackListener extends IAListener {
   final IAOnFloorplanCb? onFloorplanCb;
   final IAOnOrientationCb? onOrientationCb;
   final ValueHeadingSetter? onHeadingCb;
+  final IAOnGeofencesCb? onGeofencesCb;
 
   IACallbackListener({
     required String name,
@@ -332,6 +398,7 @@ class IACallbackListener extends IAListener {
     this.onFloorplanCb,
     this.onOrientationCb,
     this.onHeadingCb,
+    this.onGeofencesCb,
   }) : super(name);
 
   @override
@@ -344,6 +411,8 @@ class IACallbackListener extends IAListener {
   void onOrientation(double x, double y, double z, double w) => onOrientationCb?.call(x, y, z, w);
   @override
   void onHeading(double heading) => onHeadingCb?.call(heading);
+  @override
+  void onGeofences(List<IAGeofence> geofences) => onGeofencesCb?.call(geofences);
 }
 
 // Widget that auto-subscribes
@@ -362,6 +431,7 @@ class IndoorAtlasListener extends StatefulWidget {
     IAOnFloorplanCb? onFloorplan,
     IAOnOrientationCb? onOrientation,
     ValueHeadingSetter? onHeading,
+    IAOnGeofencesCb? onGeofences,
   })  : listener = IACallbackListener(
           name: name,
           onStatusCb: onStatus,
@@ -369,6 +439,7 @@ class IndoorAtlasListener extends StatefulWidget {
           onFloorplanCb: onFloorplan,
           onOrientationCb: onOrientation,
           onHeadingCb: onHeading,
+          onGeofencesCb: onGeofences,
         ),
         super(key: key);
 

@@ -263,7 +263,12 @@ class IAFlutterEngine(
     }
 
     override fun onGeofencesTriggered(event: IAGeofenceEvent) {
-        // not forwarded in minimal plugin
+        // Convertir el evento de geofence a un mapa para enviar a Flutter
+        val geofenceMaps = event.geofences.map { IAGeofence2Map(it) }
+        _channel.invokeMethod("onGeofencesTriggered", listOf(
+            event.timestamp,
+            geofenceMaps
+        ))
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
@@ -350,6 +355,7 @@ class IAFlutterEngine(
             _locationManager?.registerRegionListener(this)
             _locationManager?.registerOrientationListener(_orientationRequest, this)
             _locationManager?.requestLocationUpdates(_locationRequest, this)
+            _locationManager?.registerGeofenceListener(this)
             _locationServiceRunning = true
         }
     }
@@ -359,6 +365,7 @@ class IAFlutterEngine(
             _locationManager?.removeLocationUpdates(this)
             _locationManager?.unregisterOrientationListener(this)
             _locationManager?.unregisterRegionListener(this)
+            _locationManager?.removeGeofenceListener(this)
             _locationServiceRunning = false
         }
     }
