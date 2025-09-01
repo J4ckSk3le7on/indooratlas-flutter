@@ -200,6 +200,9 @@ class IndoorAtlas {
   static String? _traceId;
   static final Set<IAListener> _listeners = Set.identity();
   static final Set<IAGeofence> _currentGeofences = Set.identity();
+  
+  // Nuevo: Estado de geocercas activadas para tracking visual
+  static final Set<String> _triggeredGeofenceIds = Set.identity();
 
   // initialize channel handler
   static void _ensureHandler() {
@@ -214,6 +217,10 @@ class IndoorAtlas {
             final Map map = (call.arguments as List).first as Map;
             final loc = IALocation.fromMap(map);
             _currentLocation = loc;
+            
+            // Actualizar estado de geocercas basado en la nueva ubicación
+            _updateGeofenceState(loc);
+            
             for (var l in _listeners) l.onLocation(loc);
             break;
           case 'onEnterRegion':
@@ -244,7 +251,7 @@ class IndoorAtlas {
             break;
           case 'onGeofencesTriggered':
             final args = call.arguments as List;
-            // final timestamp = (args[0] as num).toInt(); // Timestamp disponible si se necesita
+            final timestamp = (args[0] as num).toInt();
             final geofenceMaps = (args[1] as List).cast<Map>();
             
             // Actualizar las geofences actuales
@@ -257,6 +264,21 @@ class IndoorAtlas {
             // Notificar a todos los listeners
             for (var l in _listeners) l.onGeofences(_currentGeofences.toList());
             break;
+          case 'onGeofenceEvent':
+            // Nuevo: Manejo específico de eventos de geocercas (entrada/salida)
+            final args = call.arguments as List;
+            final geofenceId = args[0] as String;
+            final eventType = args[1] as String; // "ENTER" o "EXIT"
+            
+            if (eventType == "ENTER") {
+              _triggeredGeofenceIds.add(geofenceId);
+            } else if (eventType == "EXIT") {
+              _triggeredGeofenceIds.remove(geofenceId);
+            }
+            
+            // Notificar cambio de estado de geocercas
+            for (var l in _listeners) l.onGeofenceEvent(geofenceId, eventType);
+            break;
           default:
             if (debugEnabled) debugPrint('Unhandled method ${call.method}');
         }
@@ -264,6 +286,65 @@ class IndoorAtlas {
         if (debugEnabled) debugPrint('Error handling method ${call.method}: $e\n$st');
       }
     });
+  }
+
+  /// Actualiza el estado de las geocercas basado en la ubicación actual
+  static void _updateGeofenceState(IALocation location) {
+    if (_currentGeofences.isEmpty) return;
+    
+    // Verificar qué geocercas están activas en la ubicación actual
+    final newTriggeredIds = <String>{};
+    
+    for (final geofence in _currentGeofences) {
+      if (_isLocationInGeofence(location, geofence)) {
+        newTriggeredIds.add(geofence.id);
+      }
+    }
+    
+    // Actualizar estado y notificar cambios
+    final previousTriggered = Set<String>.from(_triggeredGeofenceIds);
+    _triggeredGeofenceIds.clear();
+    _triggeredGeofenceIds.addAll(newTriggeredIds);
+    
+    // Notificar cambios de estado
+    for (final geofenceId in _currentGeofences.map((g) => g.id)) {
+      final wasTriggered = previousTriggered.contains(geofenceId);
+      final isNowTriggered = newTriggeredIds.contains(geofenceId);
+      
+      if (wasTriggered != isNowTriggered) {
+        final eventType = isNowTriggered ? "ENTER" : "EXIT";
+        for (var l in _listeners) l.onGeofenceEvent(geofenceId, eventType);
+      }
+    }
+  }
+  
+  /// Verifica si una ubicación está dentro de una geocerca
+  static bool _isLocationInGeofence(IALocation location, IAGeofence geofence) {
+    if (geofence.coordinates.isEmpty) return false;
+    
+    // Algoritmo simple de punto en polígono (ray casting)
+    final point = IACoordinate(location.latitude, location.longitude);
+    return _isPointInPolygon(point, geofence.coordinates);
+  }
+  
+  /// Algoritmo de punto en polígono usando ray casting
+  static bool _isPointInPolygon(IACoordinate point, List<IACoordinate> polygon) {
+    if (polygon.length < 3) return false;
+    
+    bool inside = false;
+    int j = polygon.length - 1;
+    
+    for (int i = 0; i < polygon.length; i++) {
+      if (((polygon[i].latitude > point.latitude) != (polygon[j].latitude > point.latitude)) &&
+          (point.longitude < (polygon[j].longitude - polygon[i].longitude) * 
+           (point.latitude - polygon[i].latitude) / 
+           (polygon[j].latitude - polygon[i].latitude) + polygon[i].longitude)) {
+        inside = !inside;
+      }
+      j = i;
+    }
+    
+    return inside;
   }
 
   // ----------------- Native commands -----------------
@@ -342,6 +423,16 @@ class IndoorAtlas {
     // Esto se maneja automáticamente cuando el usuario entra en una región
     return _currentGeofences.toList();
   }
+  
+  /// Obtiene las geocercas que están actualmente activadas
+  static List<IAGeofence> getTriggeredGeofences() {
+    return _currentGeofences.where((g) => _triggeredGeofenceIds.contains(g.id)).toList();
+  }
+  
+  /// Verifica si una geocerca específica está activada
+  static bool isGeofenceTriggered(String geofenceId) {
+    return _triggeredGeofenceIds.contains(geofenceId);
+  }
 
   // setLocation: allow manual override (optional)
   static Future<void> setLocation(IACoordinate coord, {int floor = 0, double accuracy = 0}) async {
@@ -353,6 +444,7 @@ class IndoorAtlas {
   static IAFloorplan? get floorplan => _currentFloorplan;
   static String? get traceId => _traceId;
   static List<IAGeofence> get geofences => _currentGeofences.toList();
+  static List<IAGeofence> get triggeredGeofences => getTriggeredGeofences();
 
   // ----------------- Listener management -----------------
   static void subscribe(IAListener listener) {
@@ -364,6 +456,13 @@ class IndoorAtlas {
     if (_currentFloorplan != null) listener.onFloorplan(true, _currentFloorplan!);
     if (_currentLocation != null) listener.onLocation(_currentLocation!);
     if (_currentGeofences.isNotEmpty) listener.onGeofences(_currentGeofences.toList());
+    
+    // Enviar estado actual de geocercas activadas
+    if (_triggeredGeofenceIds.isNotEmpty) {
+      for (final geofenceId in _triggeredGeofenceIds) {
+        listener.onGeofenceEvent(geofenceId, "ENTER");
+      }
+    }
 
     // ensure native positioning is running when first listener subscribes:
     if (_listeners.length == 1) {
@@ -394,6 +493,7 @@ abstract class IAListener {
   void onOrientation(double x, double y, double z, double w) {}
   void onHeading(double heading) {}
   void onGeofences(List<IAGeofence> geofences) {}
+  void onGeofenceEvent(String geofenceId, String eventType) {}
 }
 
 typedef IAOnStatusCb = void Function(IAStatus status, String message);
@@ -410,6 +510,7 @@ class IACallbackListener extends IAListener {
   final IAOnOrientationCb? onOrientationCb;
   final ValueHeadingSetter? onHeadingCb;
   final IAOnGeofencesCb? onGeofencesCb;
+  final void Function(String geofenceId, String eventType)? onGeofenceEventCb;
 
   IACallbackListener({
     required String name,
@@ -419,6 +520,7 @@ class IACallbackListener extends IAListener {
     this.onOrientationCb,
     this.onHeadingCb,
     this.onGeofencesCb,
+    this.onGeofenceEventCb,
   }) : super(name);
 
   @override
@@ -433,6 +535,8 @@ class IACallbackListener extends IAListener {
   void onHeading(double heading) => onHeadingCb?.call(heading);
   @override
   void onGeofences(List<IAGeofence> geofences) => onGeofencesCb?.call(geofences);
+  @override
+  void onGeofenceEvent(String geofenceId, String eventType) => onGeofenceEventCb?.call(geofenceId, eventType);
 }
 
 // Widget that auto-subscribes
@@ -452,6 +556,7 @@ class IndoorAtlasListener extends StatefulWidget {
     IAOnOrientationCb? onOrientation,
     ValueHeadingSetter? onHeading,
     IAOnGeofencesCb? onGeofences,
+    void Function(String geofenceId, String eventType)? onGeofenceEvent,
   })  : listener = IACallbackListener(
           name: name,
           onStatusCb: onStatus,
@@ -460,6 +565,7 @@ class IndoorAtlasListener extends StatefulWidget {
           onOrientationCb: onOrientation,
           onHeadingCb: onHeading,
           onGeofencesCb: onGeofences,
+          onGeofenceEventCb: onGeofenceEvent,
         ),
         super(key: key);
 

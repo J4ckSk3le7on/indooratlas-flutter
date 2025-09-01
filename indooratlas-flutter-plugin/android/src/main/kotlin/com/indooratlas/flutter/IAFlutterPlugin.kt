@@ -204,11 +204,14 @@ class IAFlutterEngine(
     private val _handler = Handler(Looper.getMainLooper())
     private val _context: Context = context
     private val _channel: MethodChannel = channel
+    // internal state
     private var _locationManager: IALocationManager? = null
-    private var _locationRequest = IALocationRequest.create()
-    private var _orientationRequest = IAOrientationRequest(1.0, 1.0)
+    private var _locationRequest: IALocationRequest = IALocationRequest.Builder().build()
+    private var _orientationRequest: IAOrientationRequest = IAOrientationRequest(1.0, 1.0)
     private var _locationServiceRunning = false
-    private var _currentGeofences = mutableListOf<Map<String, Any?>>()
+    private var _currentLocation: IALocation? = null
+    private val _currentGeofences = mutableListOf<Map<String, Any?>>()
+    private val _currentTriggeredGeofenceIds = mutableSetOf<String>()
 
     private val PERMISSION_REQUEST_CODE = 444444
 
@@ -248,7 +251,78 @@ class IAFlutterEngine(
                 System.currentTimeMillis(),
                 geofenceMaps
             ))
+            
+            // Verificar qué geocercas están activadas en la nueva ubicación
+            _checkGeofenceTriggers(location, location.region.venue.geofences)
         }
+    }
+    
+    /**
+     * Verifica qué geocercas están activadas en la ubicación actual
+     */
+    private fun _checkGeofenceTriggers(location: IALocation, geofences: List<com.indooratlas.android.sdk.IAGeofence>) {
+        val currentTriggeredIds = mutableSetOf<String>()
+        
+        for (geofence in geofences) {
+            if (_isLocationInGeofence(location, geofence)) {
+                currentTriggeredIds.add(geofence.id)
+            }
+        }
+        
+        // Comparar con el estado anterior y enviar eventos de cambio
+        val previousTriggeredIds = _currentTriggeredGeofenceIds.toSet()
+        
+        // Notificar geocercas que se activaron
+        for (geofenceId in currentTriggeredIds) {
+            if (!previousTriggeredIds.contains(geofenceId)) {
+                _channel.invokeMethod("onGeofenceEvent", listOf(geofenceId, "ENTER"))
+            }
+        }
+        
+        // Notificar geocercas que se desactivaron
+        for (geofenceId in previousTriggeredIds) {
+            if (!currentTriggeredIds.contains(geofenceId)) {
+                _channel.invokeMethod("onGeofenceEvent", listOf(geofenceId, "EXIT"))
+            }
+        }
+        
+        // Actualizar estado actual
+        _currentTriggeredGeofenceIds.clear()
+        _currentTriggeredGeofenceIds.addAll(currentTriggeredIds)
+    }
+    
+    /**
+     * Verifica si una ubicación está dentro de una geocerca
+     */
+    private fun _isLocationInGeofence(location: IALocation, geofence: com.indooratlas.android.sdk.IAGeofence): Boolean {
+        if (geofence.edges.isEmpty()) return false
+        
+        val point = doubleArrayOf(location.longitude, location.latitude)
+        return _isPointInPolygon(point, geofence.edges)
+    }
+    
+    /**
+     * Algoritmo de punto en polígono usando ray casting
+     */
+    private fun _isPointInPolygon(point: DoubleArray, polygon: List<DoubleArray>): Boolean {
+        if (polygon.size < 3) return false
+        
+        var inside = false
+        var j = polygon.size - 1
+        
+        for (i in polygon.indices) {
+            val edge = polygon[i]
+            val prevEdge = polygon[j]
+            
+            if (((edge[1] > point[1]) != (prevEdge[1] > point[1])) &&
+                (point[0] < (prevEdge[0] - edge[0]) * (point[1] - edge[1]) / 
+                 (prevEdge[1] - edge[1]) + edge[0])) {
+                inside = !inside
+            }
+            j = i
+        }
+        
+        return inside
     }
 
     // IARegion.Listener methods
@@ -264,6 +338,11 @@ class IAFlutterEngine(
                 System.currentTimeMillis(),
                 geofenceMaps
             ))
+            
+            // Verificar geocercas activadas al entrar en la región
+            if (_currentLocation != null) {
+                _checkGeofenceTriggers(_currentLocation!!, region.venue.geofences)
+            }
         }
     }
 
@@ -276,6 +355,12 @@ class IAFlutterEngine(
             System.currentTimeMillis(),
             emptyList<Map<String, Any?>>()
         ))
+        
+        // Notificar que todas las geocercas se desactivaron
+        for (geofenceId in _currentTriggeredGeofenceIds) {
+            _channel.invokeMethod("onGeofenceEvent", listOf(geofenceId, "EXIT"))
+        }
+        _currentTriggeredGeofenceIds.clear()
     }
 
     override fun onOrientationChange(timestamp: Long, @NonNull quaternion: DoubleArray) {

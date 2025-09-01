@@ -70,6 +70,9 @@ class MyApp extends StatelessWidget {
             print('Exited floorplan: ${floorplan.name}');
           }
         },
+        onGeofenceEvent: (geofenceId, eventType) {
+          print('Geofence $geofenceId: $eventType');
+        },
         child: Scaffold(
           appBar: AppBar(title: Text('IndoorAtlas Demo')),
           body: Center(
@@ -81,9 +84,12 @@ class MyApp extends StatelessWidget {
                 Text('Floor: ${IndoorAtlas.location?.floor ?? 'N/A'}'),
                 SizedBox(height: 20),
                 Text('Current Geofences:'),
-                Text('${IndoorAtlas.geofences.length} active geofence(s)'),
-                for (final geofence in IndoorAtlas.geofences)
-                  Text('- ${geofence.name}'),
+                Text('${IndoorAtlas.geofences.length} total geofence(s)'),
+                Text('${IndoorAtlas.triggeredGeofences.length} active geofence(s)'),
+                for (final geofence in IndoorAtlas.triggeredGeofences)
+                  Text('- ${geofence.name} (ACTIVE)', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                for (final geofence in IndoorAtlas.geofences.where((g) => !IndoorAtlas.isGeofenceTriggered(g.id)))
+                  Text('- ${geofence.name} (inactive)', style: TextStyle(color: Colors.grey)),
               ],
             ),
           ),
@@ -94,30 +100,177 @@ class MyApp extends StatelessWidget {
 }
 ```
 
+### Real-time Geofence Visualization
+
+Para implementar visualización en tiempo real de las geocercas (como en el ejemplo de IndoorAtlas), puedes usar un `StatefulWidget` que se actualice automáticamente:
+
+```dart
+class GeofenceMapWidget extends StatefulWidget {
+  @override
+  _GeofenceMapWidgetState createState() => _GeofenceMapWidgetState();
+}
+
+class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
+  final List<Map<String, dynamic>> _geofenceCircles = [];
+  
+  @override
+  void initState() {
+    super.initState();
+    // Suscribirse a eventos de IndoorAtlas
+    IndoorAtlas.subscribe(_listener);
+  }
+  
+  @override
+  void dispose() {
+    IndoorAtlas.unsubscribe(_listener);
+    super.dispose();
+  }
+  
+  final IAListener _listener = IACallbackListener(
+    name: 'GeofenceMap',
+    onLocation: (location) {
+      // Actualizar visualización cuando cambia la ubicación
+      _updateGeofenceVisualization();
+    },
+    onGeofences: (geofences) {
+      // Actualizar lista de geocercas disponibles
+      _updateGeofenceList(geofences);
+    },
+    onGeofenceEvent: (geofenceId, eventType) {
+      // Actualizar estado visual de geocercas específicas
+      _updateGeofenceState(geofenceId, eventType);
+    },
+  );
+  
+  void _updateGeofenceVisualization() {
+    if (mounted) {
+      setState(() {
+        // Recalcular qué geocercas están activas
+        // y actualizar colores/estilos visuales
+      });
+    }
+  }
+  
+  void _updateGeofenceList(List<IAGeofence> geofences) {
+    if (mounted) {
+      setState(() {
+        // Actualizar lista de geocercas disponibles
+      });
+    }
+  }
+  
+  void _updateGeofenceState(String geofenceId, String eventType) {
+    if (mounted) {
+      setState(() {
+        // Cambiar color/estilo de geocerca específica
+        // basado en si está activa (ENTER) o inactiva (EXIT)
+      });
+    }
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Mapa o visualización de geocercas
+        Container(
+          height: 300,
+          child: CustomPaint(
+            painter: GeofencePainter(
+              geofences: IndoorAtlas.geofences,
+              triggeredGeofences: IndoorAtlas.triggeredGeofences,
+              currentLocation: IndoorAtlas.location,
+            ),
+          ),
+        ),
+        
+        // Lista de geocercas con estado
+        Expanded(
+          child: ListView.builder(
+            itemCount: IndoorAtlas.geofences.length,
+            itemBuilder: (context, index) {
+              final geofence = IndoorAtlas.geofences[index];
+              final isActive = IndoorAtlas.isGeofenceTriggered(geofence.id);
+              
+              return ListTile(
+                title: Text(geofence.name),
+                subtitle: Text('Floor: ${geofence.floor}'),
+                trailing: Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isActive ? Colors.green : Colors.grey,
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// CustomPainter para dibujar geocercas
+class GeofencePainter extends CustomPainter {
+  final List<IAGeofence> geofences;
+  final List<IAGeofence> triggeredGeofences;
+  final IALocation? currentLocation;
+  
+  GeofencePainter({
+    required this.geofences,
+    required this.triggeredGeofences,
+    this.currentLocation,
+  });
+  
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Implementar dibujo de geocercas
+    // - Verde para geocercas activas
+    // - Gris para geocercas inactivas
+    // - Punto azul para ubicación actual
+  }
+  
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+```
+
 ### Getting Current Geofences
 
 ```dart
-// Obtener las geofences actuales donde está el usuario
+// Obtener las geocercas actuales donde está el usuario
 List<IAGeofence> currentGeofences = IndoorAtlas.geofences;
 
-// O también usando el método específico
-List<IAGeofence> venueGeofences = IndoorAtlas.getVenueGeofences();
+// Obtener solo las geocercas que están activamente activadas
+List<IAGeofence> activeGeofences = IndoorAtlas.triggeredGeofences;
 
-// Verificar si el usuario está en una geofence específica
+// Verificar si el usuario está en una geocerca específica
 bool isInGeofence(String geofenceId) {
-  return IndoorAtlas.geofences.any((g) => g.id == geofenceId);
+  return IndoorAtlas.isGeofenceTriggered(geofenceId);
 }
 
-// Nota: Las geofences se obtienen automáticamente desde la región actual
+// Obtener geocercas del venue actual
+List<IAGeofence> venueGeofences = IndoorAtlas.getVenueGeofences();
+
+// Nota: Las geocercas se obtienen automáticamente desde la región actual
 // cuando el usuario entra en un venue. Los métodos requestGeofences y removeGeofences
 // están disponibles para compatibilidad futura con la API de IndoorAtlas.
 
-// Solicitar monitoreo de geofences específicas (futuro)
+// Solicitar monitoreo de geocercas específicas (futuro)
 // await IndoorAtlas.requestGeofences(['geofence_id_1', 'geofence_id_2']);
 
-// Detener monitoreo de geofences (futuro)
+// Detener monitoreo de geocercas (futuro)
 // await IndoorAtlas.removeGeofences();
 ```
+
+### Key Features for Real-time Updates
+
+1. **Automatic State Management**: El sistema mantiene automáticamente el estado de qué geocercas están activas
+2. **Real-time Events**: Recibes eventos `onGeofenceEvent` cada vez que cambia el estado de una geocerca
+3. **Location-based Updates**: Las geocercas se verifican automáticamente cada vez que cambia la ubicación
+4. **Visual State Tracking**: Puedes usar `IndoorAtlas.isGeofenceTriggered()` para determinar el estado visual de cada geocerca
 
 For help getting started with Flutter, view our
 [online documentation](https://flutter.dev/docs), which offers tutorials,
