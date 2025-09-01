@@ -208,6 +208,7 @@ class IAFlutterEngine(
     private var _locationRequest = IALocationRequest.create()
     private var _orientationRequest = IAOrientationRequest(1.0, 1.0)
     private var _locationServiceRunning = false
+    private var _currentGeofences = mutableListOf<Map<String, Any?>>()
 
     private val PERMISSION_REQUEST_CODE = 444444
 
@@ -241,6 +242,8 @@ class IAFlutterEngine(
         // para mantener el estado sincronizado
         if (location.region != null && location.region.venue != null && location.region.venue.geofences.isNotEmpty()) {
             val geofenceMaps = location.region.venue.geofences.map { IAGeofence2Map(it) }
+            _currentGeofences.clear()
+            _currentGeofences.addAll(geofenceMaps)
             _channel.invokeMethod("onGeofencesTriggered", listOf(
                 System.currentTimeMillis(),
                 geofenceMaps
@@ -255,6 +258,8 @@ class IAFlutterEngine(
         // Si la región tiene un venue, enviar las geofences del venue
         if (region.venue != null && region.venue.geofences.isNotEmpty()) {
             val geofenceMaps = region.venue.geofences.map { IAGeofence2Map(it) }
+            _currentGeofences.clear()
+            _currentGeofences.addAll(geofenceMaps)
             _channel.invokeMethod("onGeofencesTriggered", listOf(
                 System.currentTimeMillis(),
                 geofenceMaps
@@ -266,6 +271,7 @@ class IAFlutterEngine(
         _channel.invokeMethod("onExitRegion", listOf(IARegion2Map(region)))
         
         // Limpiar las geofences cuando el usuario sale de la región
+        _currentGeofences.clear()
         _channel.invokeMethod("onGeofencesTriggered", listOf(
             System.currentTimeMillis(),
             emptyList<Map<String, Any?>>()
@@ -423,12 +429,8 @@ class IAFlutterEngine(
     }
 
     fun getCurrentGeofences(): List<Map<String, Any?>> {
-        // Obtener las geofences actuales desde el location manager
-        val currentLocation = _locationManager?.lastKnownLocation
-        if (currentLocation?.region?.venue?.geofences != null) {
-            return currentLocation.region.venue.geofences.map { IAGeofence2Map(it) }
-        }
-        return emptyList()
+        // Retornar las geofences actuales desde el estado local
+        return _currentGeofences.toList()
     }
 }
 
