@@ -373,18 +373,24 @@ class IndoorAtlas {
     await _ch.invokeMethod('setPositioningMode', idx);
   }
 
+  /// Bloquea el posicionamiento solo para interiores (desactiva detección outdoor-indoor)
   static Future<void> lockIndoors(bool locked) async {
     await _ch.invokeMethod('lockIndoors', locked);
   }
 
+  /// Bloquea el posicionamiento a un piso específico
   static Future<void> lockFloor(int floor) async {
     await _ch.invokeMethod('lockFloor', floor);
   }
 
+  /// Desbloquea el piso (permite cambio automático de piso)
   static Future<void> unlockFloor() async {
     await _ch.invokeMethod('unlockFloor');
   }
 
+  /// Configura la sensibilidad de orientación y heading para estabilizar el bearing
+  /// headingSensitivity: sensibilidad para cambios de heading (grados)
+  /// orientationSensitivity: sensibilidad para cambios de orientación 3D (grados)
   static Future<void> setSensitivities(double orientationSensitivity, double headingSensitivity) async {
     await _ch.invokeMethod('setSensitivities', [orientationSensitivity, headingSensitivity]);
   }

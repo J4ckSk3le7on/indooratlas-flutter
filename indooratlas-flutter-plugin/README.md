@@ -272,6 +272,58 @@ List<IAGeofence> venueGeofences = IndoorAtlas.getVenueGeofences();
 3. **Location-based Updates**: Las geocercas se verifican automáticamente cada vez que cambia la ubicación
 4. **Visual State Tracking**: Puedes usar `IndoorAtlas.isGeofenceTriggered()` para determinar el estado visual de cada geocerca
 
+### Indoor-Only Mode Configuration
+
+Para mejorar la precisión de las geocercas y estabilizar el bearing, puedes configurar el modo indoor exclusivo:
+
+```dart
+// Después de inicializar IndoorAtlas
+await IndoorAtlas.initialize('1.0.0', 'YOUR_API_KEY');
+
+// Configurar modo indoor exclusivo (como en la app de mapa de IndoorAtlas)
+await IndoorAtlas.lockIndoors(true);
+
+// Configurar sensibilidad de orientación para estabilizar el bearing
+// Valores recomendados: 5.0 grados para ambos parámetros
+await IndoorAtlas.setSensitivities(5.0, 5.0);
+
+// Opcional: Bloquear a un piso específico si es necesario
+// await IndoorAtlas.lockFloor(1);
+
+// Iniciar posicionamiento
+IndoorAtlas.startPositioning();
+```
+
+### Bearing vs Heading
+
+**Para la mayoría de casos, usa HEADING en lugar de BEARING:**
+
+- **Heading**: Reacciona rápidamente al movimiento del dispositivo, ideal para rotar mapas y mostrar dirección
+- **Bearing**: Indica la dirección de caminata, reacciona lentamente y puede ser inestable
+
+```dart
+IndoorAtlasListener(
+  name: 'MyApp',
+  onHeading: (heading) {
+    // Usar heading para rotación de mapa y dirección del usuario
+    // heading: 0 = Norte, 90 = Este, 180 = Sur, 270 = Oeste
+    _rotateMap(heading);
+  },
+  onLocation: (location) {
+    // location.bearing puede ser inestable, mejor usar heading
+    print('Bearing: ${location.bearing}'); // Menos estable
+  },
+  child: YourWidget(),
+)
+```
+
+### Optimización de Rendimiento
+
+1. **Modo Indoor Exclusivo**: `lockIndoors(true)` mejora la precisión en interiores
+2. **Sensibilidad Configurada**: `setSensitivities(5.0, 5.0)` estabiliza el bearing
+3. **Monitoreo de Regiones**: Las geocercas se cargan automáticamente al entrar en un venue
+4. **Eventos Eficientes**: Solo se disparan eventos cuando cambia el estado real
+
 For help getting started with Flutter, view our
 [online documentation](https://flutter.dev/docs), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.

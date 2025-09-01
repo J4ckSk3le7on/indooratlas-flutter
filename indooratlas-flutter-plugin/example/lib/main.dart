@@ -41,9 +41,16 @@ class _GeofenceDemoPageState extends State<GeofenceDemoPage> {
       await IndoorAtlas.initialize('1.0.0', 'YOUR_API_KEY_HERE');
       await IndoorAtlas.requestPermissions();
       
+      // Configurar modo indoor exclusivo para mejor precisión
+      await IndoorAtlas.lockIndoors(true);
+      
+      // Configurar sensibilidad de orientación para estabilizar el bearing
+      // Valores recomendados: 5.0 grados para ambos parámetros
+      await IndoorAtlas.setSensitivities(5.0, 5.0);
+      
       setState(() {
         _isInitialized = true;
-        _status = 'Initialized successfully';
+        _status = 'Initialized successfully (Indoor mode)';
       });
       
       // Obtener Trace ID
@@ -101,6 +108,13 @@ class _GeofenceDemoPageState extends State<GeofenceDemoPage> {
                 _status = enter 
                   ? 'Entered floorplan: ${floorplan.name}'
                   : 'Exited floorplan: ${floorplan.name}';
+              });
+            },
+            onHeading: (heading) {
+              // Usar heading en lugar de bearing para mejor estabilidad
+              // heading: 0 = Norte, 90 = Este, 180 = Sur, 270 = Oeste
+              setState(() {
+                _status = 'Heading: ${heading.toStringAsFixed(1)}° (Indoor mode)';
               });
             },
             child: _buildMainContent(),
@@ -256,7 +270,7 @@ class _GeofenceVisualizationWidgetState extends State<GeofenceVisualizationWidge
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Current Location',
+              'Current Location (Indoor Mode)',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 8),
@@ -264,10 +278,26 @@ class _GeofenceVisualizationWidgetState extends State<GeofenceVisualizationWidge
             Text('Lng: ${location.longitude.toStringAsFixed(6)}'),
             Text('Floor: ${location.floor}'),
             Text('Accuracy: ${location.accuracy.toStringAsFixed(2)}m'),
+            Text('Heading: ${location.heading.toStringAsFixed(1)}° (stable direction)'),
             if (floorplan != null) ...[
               SizedBox(height: 8),
               Text('Floorplan: ${floorplan.name}'),
             ],
+            SizedBox(height: 8),
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.green[100],
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'Indoor-only mode enabled for better accuracy',
+                style: TextStyle(
+                  color: Colors.green[800],
+                  fontSize: 12,
+                ),
+              ),
+            ),
           ],
         ),
       ),

@@ -425,11 +425,11 @@ class IAFlutterEngine(
         return _locationManager?.getExtraInfo()?.traceId ?: ""
     }
 
-    fun lockIndoors(locked: Boolean?) {
-        _handler.post { _locationManager?.lockIndoors(locked ?: true) }
+    fun lockIndoors(locked: Boolean) {
+        _handler.post { _locationManager?.lockIndoors(locked) }
     }
 
-    fun lockFloor(floor: Int?) {
+    fun lockFloor(floor: Int) {
         _handler.post { if (floor != null) _locationManager?.lockFloor(floor) }
     }
 
@@ -456,7 +456,7 @@ class IAFlutterEngine(
     }
 
     fun setSensitivities(orientationSensitivity: Double?, headingSensitivity: Double?) {
-        _orientationRequest = IAOrientationRequest(headingSensitivity ?: 1.0, orientationSensitivity ?: 1.0)
+        _orientationRequest = IAOrientationRequest(headingSensitivity ?: 5.0, orientationSensitivity ?: 5.0)
         _handler.post {
             _locationManager?.unregisterOrientationListener(this)
             _locationManager?.registerOrientationListener(_orientationRequest, this)
@@ -587,11 +587,11 @@ class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityA
                     result.success(null)
                 }
                 "lockIndoors" -> {
-                    _engineImpl.lockIndoors(call.arguments as Boolean?)
+                    _engineImpl.lockIndoors(call.arguments as Boolean)
                     result.success(null)
                 }
                 "lockFloor" -> {
-                    _engineImpl.lockFloor((call.arguments as Number?)?.toInt())
+                    _engineImpl.lockFloor((call.arguments as Number?)?.toInt() ?: 0)
                     result.success(null)
                 }
                 "unlockFloor" -> {
