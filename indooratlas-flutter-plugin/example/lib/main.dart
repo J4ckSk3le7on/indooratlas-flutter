@@ -185,35 +185,39 @@ class _MyHomePageState extends State<MyHomePage> {
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: () async {
-                                // Nota: Las geofences se obtienen automáticamente desde la región actual
-                                // Este botón es para demostración futura
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Las geofences se obtienen automáticamente desde la región actual')),
-                                );
-                              },
-                              child: Text('Request Geofences'),
+                                              Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: () async {
+                                  // Verificar geofences actuales desde el sistema
+                                  final currentGeofences = await IndoorAtlas.getCurrentGeofences();
+                                  setState(() {
+                                    _currentGeofences = currentGeofences;
+                                  });
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Geofences actualizadas: ${currentGeofences.length} encontradas')),
+                                  );
+                                },
+                                child: Text('Refresh Geofences'),
+                              ),
                             ),
-                          ),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: () async {
-                                // Nota: Las geofences se obtienen automáticamente desde la región actual
-                                // Este botón es para demostración futura
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Las geofences se obtienen automáticamente desde la región actual')),
-                                );
-                              },
-                              child: Text('Remove Geofences'),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: () async {
+                                  // Mostrar información de debug
+                                  final currentGeofences = await IndoorAtlas.getCurrentGeofences();
+                                  final staticGeofences = IndoorAtlas.geofences;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Sistema: ${currentGeofences.length}, Estado: ${staticGeofences.length}')),
+                                  );
+                                },
+                                child: Text('Debug Info'),
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
                     ],
                   ),
                 ),

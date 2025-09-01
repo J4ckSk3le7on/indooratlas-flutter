@@ -186,42 +186,6 @@ class IAGeofence {
   }
 }
 
-// Modelos de Wayfinding
-class IARoutePoint {
-  final double latitude;
-  final double longitude;
-  final int floor;
-
-  IARoutePoint.fromMap(Map map)
-    : latitude = (map['latitude'] as num).toDouble(),
-      longitude = (map['longitude'] as num).toDouble(),
-      floor = (map['floor'] as num).toInt();
-}
-
-class IARouteLeg {
-  final IARoutePoint begin;
-  final IARoutePoint end;
-  final double length;
-  final int direction;
-  final int edgeIndex;
-
-  IARouteLeg.fromMap(Map map)
-    : begin = IARoutePoint.fromMap(map['begin'] as Map),
-      end = IARoutePoint.fromMap(map['end'] as Map),
-      length = (map['length'] as num).toDouble(),
-      direction = (map['direction'] as num).toInt(),
-      edgeIndex = (map['edgeIndex'] as num).toInt();
-}
-
-class IARoute {
-  final List<IARouteLeg> legs;
-  final String? error;
-
-  IARoute.fromMap(Map map)
-    : legs = (map['legs'] as List).map((l) => IARouteLeg.fromMap(l as Map)).toList(),
-      error = map['error'] as String?;
-}
-
 // Minimal status enum
 enum IAStatus { outOfService, temporarilyUnavailable, available, limited }
 
@@ -236,7 +200,6 @@ class IndoorAtlas {
   static String? _traceId;
   static final Set<IAListener> _listeners = Set.identity();
   static final Set<IAGeofence> _currentGeofences = Set.identity();
-  static IARoute? _currentRoute;
 
   // initialize channel handler
   static void _ensureHandler() {
@@ -281,6 +244,7 @@ class IndoorAtlas {
             break;
           case 'onGeofencesTriggered':
             final args = call.arguments as List;
+            // final timestamp = (args[0] as num).toInt(); // Timestamp disponible si se necesita
             final geofenceMaps = (args[1] as List).cast<Map>();
             
             // Actualizar las geofences actuales
@@ -292,12 +256,6 @@ class IndoorAtlas {
             
             // Notificar a todos los listeners
             for (var l in _listeners) l.onGeofences(_currentGeofences.toList());
-            break;
-          case 'onWayfindingUpdate':
-            final Map map = (call.arguments as List).first as Map;
-            final route = IARoute.fromMap(map);
-            _currentRoute = route;
-            for (var l in _listeners) l.onWayfindingUpdate(route);
             break;
           default:
             if (debugEnabled) debugPrint('Unhandled method ${call.method}');
@@ -356,12 +314,24 @@ class IndoorAtlas {
     return _traceId;
   }
 
-  static Future<void> startWayfinding(double lat, double lon, int floor) async {
-    await _ch.invokeMethod('startWayfinding', [lat, lon, floor]);
+  /// Solicita monitoreo de geofences específicas
+  static Future<void> requestGeofences(List<String> geofenceIds) async {
+    await _ch.invokeMethod('requestGeofences', geofenceIds);
   }
 
-  static Future<void> stopWayfinding() async {
-    await _ch.invokeMethod('stopWayfinding');
+  /// Detiene el monitoreo de geofences
+  static Future<void> removeGeofences() async {
+    await _ch.invokeMethod('removeGeofences');
+  }
+
+  /// Obtiene las geofences actuales desde el sistema
+  static Future<List<IAGeofence>> getCurrentGeofences() async {
+    final result = await _ch.invokeMethod('getCurrentGeofences');
+    if (result is List) {
+      final geofenceMaps = result.cast<Map>();
+      return geofenceMaps.map((map) => IAGeofence.fromMap(map)).toList();
+    }
+    return [];
   }
 
   /// Obtiene las geofences del venue actual desde la ubicación
@@ -383,7 +353,6 @@ class IndoorAtlas {
   static IAFloorplan? get floorplan => _currentFloorplan;
   static String? get traceId => _traceId;
   static List<IAGeofence> get geofences => _currentGeofences.toList();
-  static IARoute? get route => _currentRoute;
 
   // ----------------- Listener management -----------------
   static void subscribe(IAListener listener) {
@@ -395,7 +364,6 @@ class IndoorAtlas {
     if (_currentFloorplan != null) listener.onFloorplan(true, _currentFloorplan!);
     if (_currentLocation != null) listener.onLocation(_currentLocation!);
     if (_currentGeofences.isNotEmpty) listener.onGeofences(_currentGeofences.toList());
-    if (_currentRoute != null) listener.onWayfindingUpdate(_currentRoute!);
 
     // ensure native positioning is running when first listener subscribes:
     if (_listeners.length == 1) {
@@ -426,7 +394,6 @@ abstract class IAListener {
   void onOrientation(double x, double y, double z, double w) {}
   void onHeading(double heading) {}
   void onGeofences(List<IAGeofence> geofences) {}
-  void onWayfindingUpdate(IARoute route) {}
 }
 
 typedef IAOnStatusCb = void Function(IAStatus status, String message);
@@ -435,7 +402,6 @@ typedef IAOnFloorplanCb = void Function(bool enter, IAFloorplan floorplan);
 typedef IAOnOrientationCb = void Function(double x, double y, double z, double w);
 typedef ValueHeadingSetter = void Function(double heading);
 typedef IAOnGeofencesCb = void Function(List<IAGeofence> geofences);
-typedef IAOnWayfindingUpdateCb = void Function(IARoute route);
 
 class IACallbackListener extends IAListener {
   final IAOnStatusCb? onStatusCb;
@@ -444,7 +410,6 @@ class IACallbackListener extends IAListener {
   final IAOnOrientationCb? onOrientationCb;
   final ValueHeadingSetter? onHeadingCb;
   final IAOnGeofencesCb? onGeofencesCb;
-  final IAOnWayfindingUpdateCb? onWayfindingUpdateCb;
 
   IACallbackListener({
     required String name,
@@ -454,7 +419,6 @@ class IACallbackListener extends IAListener {
     this.onOrientationCb,
     this.onHeadingCb,
     this.onGeofencesCb,
-    this.onWayfindingUpdateCb,
   }) : super(name);
 
   @override
@@ -469,8 +433,6 @@ class IACallbackListener extends IAListener {
   void onHeading(double heading) => onHeadingCb?.call(heading);
   @override
   void onGeofences(List<IAGeofence> geofences) => onGeofencesCb?.call(geofences);
-  @override
-  void onWayfindingUpdate(IARoute route) => onWayfindingUpdateCb?.call(route);
 }
 
 // Widget that auto-subscribes
@@ -490,7 +452,6 @@ class IndoorAtlasListener extends StatefulWidget {
     IAOnOrientationCb? onOrientation,
     ValueHeadingSetter? onHeading,
     IAOnGeofencesCb? onGeofences,
-    IAOnWayfindingUpdateCb? onWayfindingUpdate,
   })  : listener = IACallbackListener(
           name: name,
           onStatusCb: onStatus,
@@ -499,7 +460,6 @@ class IndoorAtlasListener extends StatefulWidget {
           onOrientationCb: onOrientation,
           onHeadingCb: onHeading,
           onGeofencesCb: onGeofences,
-          onWayfindingUpdateCb: onWayfindingUpdate,
         ),
         super(key: key);
 
