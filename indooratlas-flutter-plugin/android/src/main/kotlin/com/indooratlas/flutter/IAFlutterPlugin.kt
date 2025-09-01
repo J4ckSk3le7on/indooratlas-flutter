@@ -206,8 +206,8 @@ class IAFlutterEngine(
     private val _channel: MethodChannel = channel
     // internal state
     private var _locationManager: IALocationManager? = null
-    private var _locationRequest: IALocationRequest = IALocationRequest.Builder().build()
-    private var _orientationRequest: IAOrientationRequest = IAOrientationRequest(1.0, 1.0)
+    private var _locationRequest = IALocationRequest.create()
+    private var _orientationRequest = IAOrientationRequest(1.0, 1.0)
     private var _locationServiceRunning = false
     private var _currentLocation: IALocation? = null
     private val _currentGeofences = mutableListOf<Map<String, Any?>>()
