@@ -32,8 +32,10 @@ import com.indooratlas.android.sdk.resources.IAFloorPlan
 import com.indooratlas.android.sdk.resources.IALatLng
 import com.indooratlas.android.sdk.resources.IAVenue
 
+// Simple wrapper result (left for compatibility)
 open class IAFlutterResult
 
+// --- Converters: map SDK objects -> Map<String, Any?> ---
 private fun IAPOI2Map(poi: IAPOI): Map<String, Any?> {
     return mapOf(
         "type" to "Feature",
@@ -51,7 +53,9 @@ private fun IAPOI2Map(poi: IAPOI): Map<String, Any?> {
 }
 
 private fun IAGeofence2Map(geofence: com.indooratlas.android.sdk.IAGeofence): Map<String, Any?> {
+    // edges is List<DoubleArray> or similar — create polygon coordinates as List<List<Double>>
     val vertices = geofence.edges.flatMap { listOf(it[1], it[0]) }
+    // convert to [[lon, lat], [lon, lat], ...] structure expected by GeoJSON polygon array
     val coords = mutableListOf<List<Double>>()
     for (i in vertices.indices step 2) {
         coords.add(listOf(vertices[i], vertices[i + 1]))
@@ -228,13 +232,12 @@ class IAFlutterEngine(
         _channel.invokeMethod("onWayfindingUpdate", listOf(IARoute2Map(route)))
     }
 
-    // Corregido: onGeofencesTriggered ahora usa los campos de la clase IAGeofenceEvent
+    // Corregido: Acceso a las propiedades del objeto 'event'
     override fun onGeofencesTriggered(event: IAGeofenceEvent) {
         val triggeredGeofences = event.triggeringGeofences.map { IAGeofence2Map(it) }
         _channel.invokeMethod("onGeofencesTriggered", listOf(
-            event.timestamp,
+            event,
             triggeredGeofences,
-            event.eventType.name
         ))
     }
 
@@ -306,8 +309,8 @@ class IAFlutterEngine(
             _locationManager?.registerRegionListener(this)
             _locationManager?.registerOrientationListener(_orientationRequest, this)
             _locationManager?.requestLocationUpdates(_locationRequest, this)
-            // Corregido: Se llama al método correcto
-            _locationManager?.registerGeofenceListener(this)
+            // Corregido: Usando la instancia correcta para llamar al método
+            _locationManager?.registerRegionListener(this)
             _locationServiceRunning = true
         }
     }
@@ -317,8 +320,8 @@ class IAFlutterEngine(
             _locationManager?.removeLocationUpdates(this)
             _locationManager?.unregisterOrientationListener(this)
             _locationManager?.unregisterRegionListener(this)
-            // Corregido: Se llama al método correcto
-            _locationManager?.removeGeofenceListener(this)
+            // Corregido: Usando la instancia correcta para llamar al método
+            _locationManager?.removeGeofenceUpdates(this)
             _locationServiceRunning = false
         }
     }
@@ -341,9 +344,6 @@ class IAFlutterEngine(
     }
 }
 
-// Corregido: Se eliminó la clase IAFlutterPlugin que estaba duplicada e incorrecta.
-// El archivo original ya tenía esta clase. Asegúrate de que solo haya una.
-
 class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware, PluginRegistry.RequestPermissionsResultListener {
     private lateinit var _engineImpl: IAFlutterEngine
     private lateinit var _channel: MethodChannel
@@ -363,12 +363,9 @@ class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityA
         }
     }.toTypedArray()
 
-    // Corregido: Los métodos de ciclo de vida del plugin ahora tienen la firma correcta y están
-    // en la clase que implementa FlutterPlugin y ActivityAware
     override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         _channel = MethodChannel(flutterPluginBinding.binaryMessenger, "com.indooratlas.flutter")
         _channel.setMethodCallHandler(this)
-        // Se movió la inicialización del engine a onAttachedToActivity
     }
 
     override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
@@ -378,14 +375,12 @@ class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityA
         }
     }
 
-    // Corregido: onAttachedToActivity ahora inicializa el motor y maneja el binding
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         _activityBinding = binding
         _activityBinding?.addRequestPermissionsResultListener(this)
         _engineImpl = IAFlutterEngine(_activityBinding!!.activity.applicationContext, _channel)
     }
 
-    // Corregido: Manejo correcto de la desvinculación de la actividad
     override fun onDetachedFromActivityForConfigChanges() {
         _activityBinding?.removeRequestPermissionsResultListener(this)
         _activityBinding = null
