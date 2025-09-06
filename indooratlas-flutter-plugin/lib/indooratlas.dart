@@ -58,19 +58,24 @@ class IAFloorplan {
       id: map['id'] ?? '',
       name: map['name'] ?? '',
       url: map['url'] ?? '',
-      floor: map['floorLevel'] ?? 0,
-      bearing: (map['bearing'] ?? 0).toDouble(),
-      bitmapWidth: (map['bitmapWidth'] ?? 0),
-      bitmapHeight: (map['bitmapHeight'] ?? 0),
-      widthMeters: (map['widthMeters'] ?? 0).toDouble(),
-      heightMeters: (map['heightMeters'] ?? 0).toDouble(),
-      metersToPixels: (map['metersToPixels'] ?? 0).toDouble(),
-      pixelsToMeters: (map['pixelsToMeters'] ?? 0).toDouble(),
-      bottomLeft: IACoordinate((map['bottomLeft'][1] ?? 0).toDouble(), (map['bottomLeft'][0] ?? 0).toDouble()),
-      bottomRight: IACoordinate((map['bottomRight'][1] ?? 0).toDouble(), (map['bottomRight'][0] ?? 0).toDouble()),
-      center: IACoordinate((map['center'][1] ?? 0).toDouble(), (map['center'][0] ?? 0).toDouble()),
-      topLeft: IACoordinate((map['topLeft'][1] ?? 0).toDouble(), (map['topLeft'][0] ?? 0).toDouble()),
-      topRight: IACoordinate((map['topRight'][1] ?? 0).toDouble(), (map['topRight'][0] ?? 0).toDouble()),
+      floor: (map['floorLevel'] ?? 0) as int,
+      bearing: ((map['bearing'] ?? 0) as num).toDouble(),
+      bitmapWidth: (map['bitmapWidth'] ?? 0) as int,
+      bitmapHeight: (map['bitmapHeight'] ?? 0) as int,
+      widthMeters: ((map['widthMeters'] ?? 0) as num).toDouble(),
+      heightMeters: ((map['heightMeters'] ?? 0) as num).toDouble(),
+      metersToPixels: ((map['metersToPixels'] ?? 0) as num).toDouble(),
+      pixelsToMeters: ((map['pixelsToMeters'] ?? 0) as num).toDouble(),
+      bottomLeft: IACoordinate(((map['bottomLeft'][1] ?? 0) as num).toDouble(),
+          ((map['bottomLeft'][0] ?? 0) as num).toDouble()),
+      bottomRight: IACoordinate(((map['bottomRight'][1] ?? 0) as num).toDouble(),
+          ((map['bottomRight'][0] ?? 0) as num).toDouble()),
+      center: IACoordinate(((map['center'][1] ?? 0) as num).toDouble(),
+          ((map['center'][0] ?? 0) as num).toDouble()),
+      topLeft: IACoordinate(((map['topLeft'][1] ?? 0) as num).toDouble(),
+          ((map['topLeft'][0] ?? 0) as num).toDouble()),
+      topRight: IACoordinate(((map['topRight'][1] ?? 0) as num).toDouble(),
+          ((map['topRight'][0] ?? 0) as num).toDouble()),
     );
   }
 }
@@ -111,24 +116,26 @@ class IALocation extends IACoordinate {
     IAFloorplan? fp;
     if (map.containsKey('region') && (map['region'] as Map).containsKey('floorPlan')) {
       try {
-        fp = IAFloorplan.fromMap((map['region'] as Map)['floorPlan']);
+        fp = IAFloorplan.fromMap((map['region'] as Map)['floorPlan'] as Map);
       } catch (_) {}
     } else if (map.containsKey('floorPlan')) {
-      fp = IAFloorplan.fromMap(map['floorPlan']);
+      try {
+        fp = IAFloorplan.fromMap(map['floorPlan'] as Map);
+      } catch (_) {}
     }
 
     return IALocation(
-      latitude: (map['latitude'] as num).toDouble(),
-      longitude: (map['longitude'] as num).toDouble(),
+      latitude: ((map['latitude'] ?? 0) as num).toDouble(),
+      longitude: ((map['longitude'] ?? 0) as num).toDouble(),
       pixel: p,
       floorplan: fp,
-      accuracy: (map['accuracy'] ?? 0).toDouble(),
-      heading: (map['heading'] ?? 0).toDouble(),
-      altitude: (map['altitude'] ?? 0).toDouble(),
-      floor: (map['flr'] ?? 0),
-      floorCertainty: (map['floorCertainty'] ?? 0).toDouble(),
-      velocity: (map['velocity'] ?? 0).toDouble(),
-      timestamp: DateTime.fromMillisecondsSinceEpoch((map['timestamp'] ?? DateTime.now().millisecondsSinceEpoch)),
+      accuracy: ((map['accuracy'] ?? 0) as num).toDouble(),
+      heading: ((map['heading'] ?? 0) as num).toDouble(),
+      altitude: ((map['altitude'] ?? 0) as num).toDouble(),
+      floor: (map['flr'] ?? 0) as int,
+      floorCertainty: ((map['floorCertainty'] ?? 0) as num).toDouble(),
+      velocity: ((map['velocity'] ?? 0) as num).toDouble(),
+      timestamp: DateTime.fromMillisecondsSinceEpoch((map['timestamp'] ?? DateTime.now().millisecondsSinceEpoch) as int),
     );
   }
 
@@ -168,21 +175,73 @@ class IAGeofence {
   factory IAGeofence.fromMap(Map map) {
     final geometry = map['geometry'] as Map;
     final coords = (geometry['coordinates'] as List).first as List;
-    
+
     final coordinates = coords.map((coord) {
       return IACoordinate(
-        (coord[1] as num).toDouble(), // latitud
-        (coord[0] as num).toDouble(), // longitud
+        ((coord[1] as num)).toDouble(), // latitud
+        ((coord[0] as num)).toDouble(), // longitud
       );
     }).toList();
 
     return IAGeofence(
       id: map['id'] ?? '',
-      name: (map['properties'] as Map)['name'] ?? '',
-      floor: (map['properties'] as Map)['floor'] ?? 0,
-      payload: (map['properties'] as Map)['payload'],
+      name: ((map['properties'] as Map)['name']) ?? '',
+      floor: ((map['properties'] as Map)['floor']) ?? 0,
+      payload: (map['properties'] as Map)['payload']?.toString(),
       coordinates: coordinates,
     );
+  }
+}
+
+// ----------------- IARoute Models -----------------
+class IARoutePoint {
+  final double latitude;
+  final double longitude;
+  final int floor;
+  IARoutePoint(this.latitude, this.longitude, this.floor);
+  factory IARoutePoint.fromMap(Map m) {
+    return IARoutePoint(
+      ((m['latitude'] ?? 0) as num).toDouble(),
+      ((m['longitude'] ?? 0) as num).toDouble(),
+      (m['floor'] ?? 0) as int,
+    );
+  }
+}
+
+class IARouteLeg {
+  final IARoutePoint begin;
+  final IARoutePoint end;
+  final double length;
+  final double direction;
+  final int edgeIndex;
+
+  IARouteLeg({
+    required this.begin,
+    required this.end,
+    required this.length,
+    required this.direction,
+    required this.edgeIndex,
+  });
+
+  factory IARouteLeg.fromMap(Map m) {
+    return IARouteLeg(
+      begin: IARoutePoint.fromMap(m['begin'] as Map),
+      end: IARoutePoint.fromMap(m['end'] as Map),
+      length: ((m['length'] ?? 0) as num).toDouble(),
+      direction: ((m['direction'] ?? 0) as num).toDouble(),
+      edgeIndex: (m['edgeIndex'] ?? -1) as int,
+    );
+  }
+}
+
+class IARoute {
+  final List<IARouteLeg> legs;
+  final String error;
+  IARoute(this.legs, this.error);
+  factory IARoute.fromMap(Map m) {
+    final legsList = (m['legs'] as List?) ?? [];
+    final legs = legsList.map((e) => IARouteLeg.fromMap(e as Map)).toList();
+    return IARoute(legs, (m['error'] ?? '') as String);
   }
 }
 
@@ -200,9 +259,15 @@ class IndoorAtlas {
   static String? _traceId;
   static final Set<IAListener> _listeners = Set.identity();
   static final Set<IAGeofence> _currentGeofences = Set.identity();
-  
+
   // Nuevo: Estado de geocercas activadas para tracking visual
   static final Set<String> _triggeredGeofenceIds = Set.identity();
+
+  // Nuevo: destino actual (para marcar en UI)
+  static IACoordinate? _currentDestination;
+
+  /// getter público
+  static IACoordinate? get currentDestination => _currentDestination;
 
   // initialize channel handler
   static void _ensureHandler() {
@@ -217,24 +282,23 @@ class IndoorAtlas {
             final Map map = (call.arguments as List).first as Map;
             final loc = IALocation.fromMap(map);
             _currentLocation = loc;
-            
-            // Actualizar estado de geocercas basado en la nueva ubicación
+
+            // Actualizar estado de geofence
             _updateGeofenceState(loc);
-            
+
             for (var l in _listeners) l.onLocation(loc);
             break;
           case 'onEnterRegion':
             final Map map = (call.arguments as List).first as Map;
-            // if contains floorPlan, notify floorplan enter
             if (map.containsKey('floorPlan')) {
-              _currentFloorplan = IAFloorplan.fromMap(map['floorPlan']);
+              _currentFloorplan = IAFloorplan.fromMap(map['floorPlan'] as Map);
               for (var l in _listeners) l.onFloorplan(true, _currentFloorplan!);
             }
             break;
           case 'onExitRegion':
             final Map map = (call.arguments as List).first as Map;
             if (map.containsKey('floorPlan')) {
-              final fp = IAFloorplan.fromMap(map['floorPlan']);
+              final fp = IAFloorplan.fromMap(map['floorPlan'] as Map);
               for (var l in _listeners) l.onFloorplan(false, fp);
               _currentFloorplan = null;
             }
@@ -251,33 +315,42 @@ class IndoorAtlas {
             break;
           case 'onGeofencesTriggered':
             final args = call.arguments as List;
-            final timestamp = (args[0] as num).toInt();
             final geofenceMaps = (args[1] as List).cast<Map>();
-            
+
             // Actualizar las geofences actuales
             _currentGeofences.clear();
             for (final geofenceMap in geofenceMaps) {
               final geofence = IAGeofence.fromMap(geofenceMap);
               _currentGeofences.add(geofence);
             }
-            
+
             // Notificar a todos los listeners
             for (var l in _listeners) l.onGeofences(_currentGeofences.toList());
             break;
           case 'onGeofenceEvent':
-            // Nuevo: Manejo específico de eventos de geocercas (entrada/salida)
             final args = call.arguments as List;
             final geofenceId = args[0] as String;
             final eventType = args[1] as String; // "ENTER" o "EXIT"
-            
+
             if (eventType == "ENTER") {
               _triggeredGeofenceIds.add(geofenceId);
             } else if (eventType == "EXIT") {
               _triggeredGeofenceIds.remove(geofenceId);
             }
-            
-            // Notificar cambio de estado de geocercas
+
             for (var l in _listeners) l.onGeofenceEvent(geofenceId, eventType);
+            break;
+          case 'onWayfindingUpdate':
+            // recibe un Map con la estructura de IARoute2Map desde native
+            final Map map = (call.arguments as List).first as Map;
+            final route = IARoute.fromMap(map);
+
+            // Llamamos al método del listener (implementación concreta lo manejará)
+            for (var l in _listeners) {
+              try {
+                l.onWayfindingUpdate(route);
+              } catch (_) {}
+            }
             break;
           default:
             if (debugEnabled) debugPrint('Unhandled method ${call.method}');
@@ -291,59 +364,60 @@ class IndoorAtlas {
   /// Actualiza el estado de las geocercas basado en la ubicación actual
   static void _updateGeofenceState(IALocation location) {
     if (_currentGeofences.isEmpty) return;
-    
-    // Verificar qué geocercas están activas en la ubicación actual
+
     final newTriggeredIds = <String>{};
-    
+
     for (final geofence in _currentGeofences) {
       if (_isLocationInGeofence(location, geofence)) {
         newTriggeredIds.add(geofence.id);
       }
     }
-    
-    // Actualizar estado y notificar cambios
+
     final previousTriggered = Set<String>.from(_triggeredGeofenceIds);
-    _triggeredGeofenceIds.clear();
-    _triggeredGeofenceIds.addAll(newTriggeredIds);
-    
-    // Notificar cambios de estado
+    _triggeredGeofenceIds
+      ..clear()
+      ..addAll(newTriggeredIds);
+
     for (final geofenceId in _currentGeofences.map((g) => g.id)) {
       final wasTriggered = previousTriggered.contains(geofenceId);
       final isNowTriggered = newTriggeredIds.contains(geofenceId);
-      
+
       if (wasTriggered != isNowTriggered) {
         final eventType = isNowTriggered ? "ENTER" : "EXIT";
         for (var l in _listeners) l.onGeofenceEvent(geofenceId, eventType);
       }
     }
   }
-  
+
   /// Verifica si una ubicación está dentro de una geocerca
   static bool _isLocationInGeofence(IALocation location, IAGeofence geofence) {
     if (geofence.coordinates.isEmpty) return false;
-    
-    // Algoritmo simple de punto en polígono (ray casting)
-    final point = IACoordinate(location.latitude, location.longitude);
-    return _isPointInPolygon(point, geofence.coordinates);
+
+    final pointLat = location.latitude;
+    final pointLon = location.longitude;
+    return _isPointInPolygon(IACoordinate(pointLat, pointLon), geofence.coordinates);
   }
-  
+
   /// Algoritmo de punto en polígono usando ray casting
   static bool _isPointInPolygon(IACoordinate point, List<IACoordinate> polygon) {
     if (polygon.length < 3) return false;
-    
+
     bool inside = false;
     int j = polygon.length - 1;
-    
+
     for (int i = 0; i < polygon.length; i++) {
-      if (((polygon[i].latitude > point.latitude) != (polygon[j].latitude > point.latitude)) &&
-          (point.longitude < (polygon[j].longitude - polygon[i].longitude) * 
-           (point.latitude - polygon[i].latitude) / 
-           (polygon[j].latitude - polygon[i].latitude) + polygon[i].longitude)) {
+      final xi = polygon[i].latitude;
+      final yi = polygon[i].longitude;
+      final xj = polygon[j].latitude;
+      final yj = polygon[j].longitude;
+
+      if (((xi > point.latitude) != (xj > point.latitude)) &&
+          (point.longitude < (yj - yi) * (point.latitude - xi) / (xj - xi) + yi)) {
         inside = !inside;
       }
       j = i;
     }
-    
+
     return inside;
   }
 
@@ -424,17 +498,15 @@ class IndoorAtlas {
   /// Obtiene las geofences del venue actual desde la ubicación
   static List<IAGeofence> getVenueGeofences() {
     if (_currentLocation?.floorplan == null) return [];
-    
-    // Las geofences del venue se obtienen desde la región actual
-    // Esto se maneja automáticamente cuando el usuario entra en una región
+
     return _currentGeofences.toList();
   }
-  
+
   /// Obtiene las geocercas que están actualmente activadas
   static List<IAGeofence> getTriggeredGeofences() {
     return _currentGeofences.where((g) => _triggeredGeofenceIds.contains(g.id)).toList();
   }
-  
+
   /// Verifica si una geocerca específica está activada
   static bool isGeofenceTriggered(String geofenceId) {
     return _triggeredGeofenceIds.contains(geofenceId);
@@ -443,6 +515,36 @@ class IndoorAtlas {
   // setLocation: allow manual override (optional)
   static Future<void> setLocation(IACoordinate coord, {int floor = 0, double accuracy = 0}) async {
     await _ch.invokeMethod('setLocation', [coord.latitude, coord.longitude, floor, accuracy]);
+  }
+
+  // ----------------- WAYFINDING -----------------
+
+  /// Lanza wayfinding hacia la coordenada dada y guarda destino localmente
+  /// mode: optional int — ejemplo: 1 = EXCLUDE_INACCESSIBLE, 2 = EXCLUDE_ACCESSIBLE_ONLY
+  static Future<void> startWayfinding(double lat, double lon, {int floor = 0, int? mode}) async {
+    _ensureHandler();
+    _currentDestination = IACoordinate(lat, lon);
+    final args = [lat, lon, floor, if (mode != null) mode];
+    await _ch.invokeMethod('startWayfinding', args);
+
+    // Notificar a los listeners que hay un destino nuevo
+    for (var l in _listeners) {
+      try {
+        l.onDestinationSet(_currentDestination);
+      } catch (_) {}
+    }
+  }
+
+  /// Detiene wayfinding y limpia destino local
+  static Future<void> stopWayfinding() async {
+    _currentDestination = null;
+    await _ch.invokeMethod('stopWayfinding');
+
+    for (var l in _listeners) {
+      try {
+        l.onDestinationSet(_currentDestination);
+      } catch (_) {}
+    }
   }
 
   // getters
@@ -462,7 +564,7 @@ class IndoorAtlas {
     if (_currentFloorplan != null) listener.onFloorplan(true, _currentFloorplan!);
     if (_currentLocation != null) listener.onLocation(_currentLocation!);
     if (_currentGeofences.isNotEmpty) listener.onGeofences(_currentGeofences.toList());
-    
+
     // Enviar estado actual de geocercas activadas
     if (_triggeredGeofenceIds.isNotEmpty) {
       for (final geofenceId in _triggeredGeofenceIds) {
@@ -470,18 +572,18 @@ class IndoorAtlas {
       }
     }
 
+    // Enviar destino actual (si existe) usando el método del listener
+    listener.onDestinationSet(_currentDestination);
+
     // ensure native positioning is running when first listener subscribes:
     if (_listeners.length == 1) {
       // startPositioning should be called by app logic; here we do not auto-start
-      // but you can uncomment next line to auto start.
-      // startPositioning();
     }
   }
 
   static void unsubscribe(IAListener listener) {
     if (!_listeners.contains(listener)) return;
     _listeners.remove(listener);
-    // optionally stop native service when no listeners
     if (_listeners.isEmpty) {
       // stopPositioning();
     }
@@ -500,6 +602,10 @@ abstract class IAListener {
   void onHeading(double heading) {}
   void onGeofences(List<IAGeofence> geofences) {}
   void onGeofenceEvent(String geofenceId, String eventType) {}
+  // opcional: onWayfindingUpdate (implementable por listeners)
+  void onWayfindingUpdate(IARoute route) {}
+  // opcional: cuando se establece o se limpia el destino
+  void onDestinationSet(IACoordinate? destination) {}
 }
 
 typedef IAOnStatusCb = void Function(IAStatus status, String message);
@@ -518,6 +624,10 @@ class IACallbackListener extends IAListener {
   final IAOnGeofencesCb? onGeofencesCb;
   final void Function(String geofenceId, String eventType)? onGeofenceEventCb;
 
+  // Renombrados: campos que guardan callbacks para evitar colisión con métodos
+  final void Function(IARoute route)? onWayfindingUpdateCb;
+  final void Function(IACoordinate? destination)? onDestinationSetCb;
+
   IACallbackListener({
     required String name,
     this.onStatusCb,
@@ -527,7 +637,11 @@ class IACallbackListener extends IAListener {
     this.onHeadingCb,
     this.onGeofencesCb,
     this.onGeofenceEventCb,
-  }) : super(name);
+    void Function(IARoute route)? onWayfindingUpdate,
+    void Function(IACoordinate? destination)? onDestinationSet,
+  })  : onWayfindingUpdateCb = onWayfindingUpdate,
+        onDestinationSetCb = onDestinationSet,
+        super(name);
 
   @override
   void onStatus(IAStatus status, String message) => onStatusCb?.call(status, message);
@@ -543,6 +657,12 @@ class IACallbackListener extends IAListener {
   void onGeofences(List<IAGeofence> geofences) => onGeofencesCb?.call(geofences);
   @override
   void onGeofenceEvent(String geofenceId, String eventType) => onGeofenceEventCb?.call(geofenceId, eventType);
+
+  // implementaciones que delegan a los campos renombrados
+  @override
+  void onWayfindingUpdate(IARoute route) => onWayfindingUpdateCb?.call(route);
+  @override
+  void onDestinationSet(IACoordinate? destination) => onDestinationSetCb?.call(destination);
 }
 
 // Widget that auto-subscribes
@@ -563,6 +683,8 @@ class IndoorAtlasListener extends StatefulWidget {
     ValueHeadingSetter? onHeading,
     IAOnGeofencesCb? onGeofences,
     void Function(String geofenceId, String eventType)? onGeofenceEvent,
+    void Function(IARoute route)? onWayfindingUpdate,
+    void Function(IACoordinate? destination)? onDestinationSet,
   })  : listener = IACallbackListener(
           name: name,
           onStatusCb: onStatus,
@@ -572,6 +694,8 @@ class IndoorAtlasListener extends StatefulWidget {
           onHeadingCb: onHeading,
           onGeofencesCb: onGeofences,
           onGeofenceEventCb: onGeofenceEvent,
+          onWayfindingUpdate: onWayfindingUpdate,
+          onDestinationSet: onDestinationSet,
         ),
         super(key: key);
 
