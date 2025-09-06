@@ -1,4 +1,3 @@
-// IAFlutterEngine.kt (reemplaza tu archivo actual con este)
 package com.indooratlas.flutter
 
 import android.Manifest
@@ -12,6 +11,7 @@ import android.util.Log
 
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 
 import com.indooratlas.android.sdk.IALocation
 import com.indooratlas.android.sdk.IALocationRequest
@@ -21,7 +21,6 @@ import com.indooratlas.android.sdk.IALocationManager
 import com.indooratlas.android.sdk.IARegion
 import com.indooratlas.android.sdk.IARoute
 import com.indooratlas.android.sdk.IAOrientationListener
-// Nota: NO importamos IAWayfindingListener a nivel de clase para evitar errores de versión
 import com.indooratlas.android.sdk.IAGeofenceListener
 import com.indooratlas.android.sdk.IAGeofenceEvent
 import com.indooratlas.android.sdk.IAPOI
@@ -29,9 +28,9 @@ import com.indooratlas.android.sdk.resources.IAFloorPlan
 import com.indooratlas.android.sdk.resources.IALatLng
 import com.indooratlas.android.sdk.resources.IAVenue
 
+// Simple wrapper result (left for compatibility)
 open class IAFlutterResult
 
-// (converters: iguales a los tuyos — los dejo intactos)
 private fun IAPOI2Map(poi: IAPOI): Map<String, Any?> { /* ... copia tu implementación ... */ 
     return mapOf(
         "type" to "Feature",
@@ -177,7 +176,6 @@ class IAFlutterEngine(
 ) : IALocationListener,
     IARegion.Listener,
     IAOrientationListener,
-    // NOTA: NO implementamos IAWayfindingListener aquí para evitar problemas en compilación
     IAGeofenceListener,
     PluginRegistry.RequestPermissionsResultListener {
 
@@ -206,7 +204,7 @@ class IAFlutterEngine(
     private val _currentGeofences = mutableListOf<Map<String, Any?>>()
     private val _currentTriggeredGeofenceIds = mutableSetOf<String>()
 
-    // **Nuevo**: reference to the active wayfinding listener (if any)
+    // reference to the active wayfinding listener (if any)
     private var _currentWayfindingListener: com.indooratlas.android.sdk.IAWayfindingListener? = null
 
     private val PERMISSION_REQUEST_CODE = 444444
@@ -267,6 +265,7 @@ class IAFlutterEngine(
                 _channel.invokeMethod("onGeofenceEvent", listOf(geofenceId, "ENTER"))
             }
         }
+
         for (geofenceId in previousTriggeredIds) {
             if (!currentTriggeredIds.contains(geofenceId)) {
                 _channel.invokeMethod("onGeofenceEvent", listOf(geofenceId, "EXIT"))
@@ -350,9 +349,8 @@ class IAFlutterEngine(
         _channel.invokeMethod("onHeadingChanged", listOf(timestamp, heading))
     }
 
-    // NOTE: hemos movido la lógica de onWayfindingUpdate a un listener anónimo
     override fun onGeofencesTriggered(event: IAGeofenceEvent) {
-        // left intentionally blank
+        // no-op here, we handle geofences via regions/venue
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
@@ -374,6 +372,7 @@ class IAFlutterEngine(
 
     fun requestPermissions() {
         val binding = activityBinding ?: return
+        // use ActivityPluginBinding to request permissions
         binding.activity.requestPermissions(PERMISSIONS, PERMISSION_REQUEST_CODE)
     }
 
@@ -452,14 +451,84 @@ class IAFlutterEngine(
         }
     }
 
-    /**
-     * Start wayfinding towards the given lat/lon/floor.
-     * mode: optional int to indicate tags/filtering (custom mapping handled in plugin)
-     *  - null / 0 => no special tags
-     *  - 1 => EXCLUDE_INACCESSIBLE
-     *  - 2 => EXCLUDE_ACCESSIBLE_ONLY
-     *
-     * NOTE: we create an anonymous IAWayfindingListener and keep a reference so we don't need to
-     * implement the interface at class level (avoids compile errors with SDK mismatches).
-     */
-    fun startWayfinding(lat: Double?, lon: Double?, floor: Int?, mode: Int? = nu
+    fun startWayfinding(lat: Double?, lon: Double?, floor: Int?, mode: Int? = null) {
+        _handler.post {
+            if (_locationManager != null) {
+                val builder = com.indooratlas.android.sdk.IAWayfindingRequest.Builder()
+                    .withLatitude(lat ?: 0.0)
+                    .withLongitude(lon ?: 0.0)
+                    .withFloor(floor ?: 0)
+
+                if (mode != null) {
+                    try {
+                        when (mode) {
+                            1 -> builder.withTags(com.indooratlas.android.sdk.IAWayfindingTags.EXCLUDE_INACCESSIBLE)
+                            2 -> builder.withTags(com.indooratlas.android.sdk.IAWayfindingTags.EXCLUDE_ACCESSIBLE_ONLY)
+                        }
+                    } catch (e: Exception) {
+                        // tags might not exist on every SDK version
+                    }
+                }
+
+                val request = builder.build()
+
+                // Remove previous listener if any
+                try {
+                    if (_currentWayfindingListener != null) {
+                        _locationManager?.removeWayfindingUpdates(_currentWayfindingListener)
+                    } else {
+                        try { _locationManager?.removeWayfindingUpdates() } catch (_: Exception) {}
+                    }
+                } catch (e: Exception) {}
+
+                val listener = object : com.indooratlas.android.sdk.IAWayfindingListener {
+                    override fun onWayfindingUpdate(route: com.indooratlas.android.sdk.IARoute) {
+                        try {
+                            _channel.invokeMethod("onWayfindingUpdate", listOf(IARoute2Map(route)))
+                        } catch (e: Exception) {}
+                    }
+                }
+
+                _currentWayfindingListener = listener
+
+                try {
+                    _locationManager?.requestWayfindingUpdates(request, listener)
+                } catch (e: Exception) {
+                    try {
+                        val m = _locationManager?.javaClass?.getMethod("requestWayfindingUpdates", com.indooratlas.android.sdk.IAWayfindingListener::class.java)
+                        m?.invoke(_locationManager, listener)
+                    } catch (ex: Exception) {}
+                }
+            }
+        }
+    }
+
+    fun stopWayfinding() {
+        _handler.post {
+            try {
+                if (_currentWayfindingListener != null) {
+                    try {
+                        _locationManager?.removeWayfindingUpdates(_currentWayfindingListener)
+                    } catch (e: Exception) {
+                        try { _locationManager?.removeWayfindingUpdates() } catch (_: Exception) {}
+                    }
+                    _currentWayfindingListener = null
+                } else {
+                    try { _locationManager?.removeWayfindingUpdates() } catch (_: Exception) {}
+                }
+            } catch (e: Exception) {}
+        }
+    }
+
+    fun requestGeofences(geofenceIds: List<String>) {
+        // placeholder (implement per SDK version if needed)
+    }
+
+    fun removeGeofences() {
+        // placeholder
+    }
+
+    fun getCurrentGeofences(): List<Map<String, Any?>> {
+        return _currentGeofences.toList()
+    }
+}

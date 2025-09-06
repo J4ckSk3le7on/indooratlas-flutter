@@ -7,7 +7,12 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
-import android.util.Log
+
+import com.indooratlas.android.sdk.IALocation
+import com.indooratlas.android.sdk.IALocationListener
+import com.indooratlas.android.sdk.IALocationManager
+import com.indooratlas.android.sdk.IALocationRequest
+
 
 class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
     private lateinit var _engineImpl: IAFlutterEngine
@@ -47,7 +52,7 @@ class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityA
                     val args = call.arguments as List<*>
                     val pluginVersion = args[0] as String
                     val apiKey = args[1] as String
-                    val endpoint = (args.getOrNull(2) as? String) ?: ""
+                    val endpoint = (args[2] as? String) ?: ""
                     _engineImpl.initialize(pluginVersion, apiKey, endpoint)
                     result.success(null)
                 }
@@ -65,8 +70,8 @@ class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityA
                 }
                 "setOutputThresholds" -> {
                     val args = call.arguments as List<*>
-                    val distance = (args.getOrNull(0) as Number?)?.toDouble()
-                    val interval = (args.getOrNull(1) as Number?)?.toDouble()
+                    val distance = (args[0] as Number?)?.toDouble()
+                    val interval = (args[1] as Number?)?.toDouble()
                     _engineImpl.setOutputThresholds(distance, interval)
                     result.success(null)
                 }
@@ -89,8 +94,8 @@ class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityA
                 }
                 "setSensitivities" -> {
                     val args = call.arguments as List<*>
-                    val ori = (args.getOrNull(0) as Number?)?.toDouble()
-                    val head = (args.getOrNull(1) as Number?)?.toDouble()
+                    val ori = (args[0] as Number?)?.toDouble()
+                    val head = (args[1] as Number?)?.toDouble()
                     _engineImpl.setSensitivities(ori, head)
                     result.success(null)
                 }
@@ -98,7 +103,7 @@ class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityA
                     result.success(_engineImpl.getTraceId())
                 }
                 "requestGeofences" -> {
-                    val geofenceIds = (call.arguments as? List<*>)?.map { it as String } ?: emptyList()
+                    val geofenceIds = (call.arguments as List<*>).map { it as String }
                     _engineImpl.requestGeofences(geofenceIds)
                     result.success(null)
                 }
@@ -109,13 +114,12 @@ class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityA
                 "getCurrentGeofences" -> {
                     result.success(_engineImpl.getCurrentGeofences())
                 }
-                // NEW: Wayfinding start/stop
                 "startWayfinding" -> {
-                    val args = call.arguments as? List<*>
-                    val lat = (args?.getOrNull(0) as? Number)?.toDouble() ?: 0.0
-                    val lon = (args?.getOrNull(1) as? Number)?.toDouble() ?: 0.0
-                    val floor = (args?.getOrNull(2) as? Number)?.toInt() ?: 0
-                    val mode = (args?.getOrNull(3) as? Number)?.toInt() // optional
+                    val args = call.arguments as List<*>
+                    val lat = (args[0] as Number?)?.toDouble()
+                    val lon = (args[1] as Number?)?.toDouble()
+                    val floor = (args[2] as Number?)?.toInt()
+                    val mode = if (args.size > 3) (args[3] as Number?)?.toInt() else null
                     _engineImpl.startWayfinding(lat, lon, floor, mode)
                     result.success(null)
                 }
