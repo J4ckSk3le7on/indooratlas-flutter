@@ -1,5 +1,6 @@
 package com.indooratlas.flutter
 
+// Importaciones de Android
 import android.Manifest
 import android.content.Context
 import android.os.Build
@@ -9,10 +10,12 @@ import android.os.Looper
 import androidx.annotation.NonNull
 import android.util.Log
 
+// Importaciones de Flutter
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 
+// Importaciones de IndoorAtlas
 import com.indooratlas.android.sdk.IALocation
 import com.indooratlas.android.sdk.IALocationRequest
 import com.indooratlas.android.sdk.IAOrientationRequest
@@ -28,10 +31,12 @@ import com.indooratlas.android.sdk.resources.IAFloorPlan
 import com.indooratlas.android.sdk.resources.IALatLng
 import com.indooratlas.android.sdk.resources.IAVenue
 
+// Resto del código...
+
 // Simple wrapper result (left for compatibility)
 open class IAFlutterResult
 
-private fun IAPOI2Map(poi: IAPOI): Map<String, Any?> { /* ... copia tu implementación ... */ 
+private fun IAPOI2Map(poi: IAPOI): Map<String, Any?> {
     return mapOf(
         "type" to "Feature",
         "id" to poi.id,
@@ -47,7 +52,7 @@ private fun IAPOI2Map(poi: IAPOI): Map<String, Any?> { /* ... copia tu implement
     )
 }
 
-private fun IAGeofence2Map(geofence: com.indooratlas.android.sdk.IAGeofence): Map<String, Any?> { /* ... */ 
+private fun IAGeofence2Map(geofence: com.indooratlas.android.sdk.IAGeofence): Map<String, Any?> {
     val vertices = geofence.edges.flatMap { listOf(it[1], it[0]) }
     val coords = mutableListOf<List<Double>>()
     for (i in vertices.indices step 2) {
@@ -68,7 +73,7 @@ private fun IAGeofence2Map(geofence: com.indooratlas.android.sdk.IAGeofence): Ma
     )
 }
 
-private fun IAFloorplan2Map(floorplan: IAFloorPlan): Map<String, Any?> { /* ... */ 
+private fun IAFloorplan2Map(floorplan: IAFloorPlan): Map<String, Any?> {
     return mapOf(
         "id" to floorplan.id,
         "name" to (floorplan.name ?: ""),
@@ -89,7 +94,7 @@ private fun IAFloorplan2Map(floorplan: IAFloorPlan): Map<String, Any?> { /* ... 
     )
 }
 
-private fun IAVenue2Map(venue: IAVenue): Map<String, Any?> { /* ... */ 
+private fun IAVenue2Map(venue: IAVenue): Map<String, Any?> {
     val map = mutableMapOf<String, Any?>(
         "id" to venue.id,
         "name" to venue.name
@@ -103,7 +108,7 @@ private fun IAVenue2Map(venue: IAVenue): Map<String, Any?> { /* ... */
     return map
 }
 
-private fun IARegion2Map(region: IARegion): Map<String, Any?> { /* ... */ 
+private fun IARegion2Map(region: IARegion): Map<String, Any?> {
     val map = mutableMapOf<String, Any?>(
         "regionId" to region.id,
         "timestamp" to region.timestamp,
@@ -118,7 +123,7 @@ private fun IARegion2Map(region: IARegion): Map<String, Any?> { /* ... */
     return map
 }
 
-private fun IALocation2Map(location: IALocation): Map<String, Any?> { /* ... */ 
+private fun IALocation2Map(location: IALocation): Map<String, Any?> {
     val map = mutableMapOf<String, Any?>(
         "latitude" to location.latitude,
         "longitude" to location.longitude,
@@ -146,7 +151,7 @@ private fun IALocation2Map(location: IALocation): Map<String, Any?> { /* ... */
     return map
 }
 
-private fun IARoutePoint2Map(rp: IARoute.Point): Map<String, Any?> { /* ... */ 
+private fun IARoutePoint2Map(rp: IARoute.Point): Map<String, Any?> {
     return mapOf(
         "latitude" to rp.latitude,
         "longitude" to rp.longitude,
@@ -154,7 +159,7 @@ private fun IARoutePoint2Map(rp: IARoute.Point): Map<String, Any?> { /* ... */
     )
 }
 
-private fun IARoute2Map(route: IARoute): Map<String, Any?> { /* ... */ 
+private fun IARoute2Map(route: IARoute): Map<String, Any?> {
     val legs: List<Map<String, Any?>> = route.legs.map { leg ->
         mapOf(
             "begin" to IARoutePoint2Map(leg.begin),
@@ -280,7 +285,8 @@ class IAFlutterEngine(
         if (geofence.edges.isEmpty()) return false
 
         val point = doubleArrayOf(location.longitude, location.latitude)
-        return _isPointInPolygon(point, geofence.edges)
+        val polygon = geofence.edges.map { it.reversedArray() }
+        return _isPointInPolygon(point, polygon)
     }
 
     private fun _isPointInPolygon(point: DoubleArray, polygon: List<DoubleArray>): Boolean {
@@ -472,32 +478,33 @@ class IAFlutterEngine(
 
                 val request = builder.build()
 
-                // Remove previous listener if any
+                // Intentamos eliminar el listener anterior de forma segura.
                 try {
-                    if (_currentWayfindingListener != null) {
-                        _locationManager?.removeWayfindingUpdates(_currentWayfindingListener)
-                    } else {
-                        try { _locationManager?.removeWayfindingUpdates() } catch (_: Exception) {}
+                    _locationManager?.removeWayfindingUpdates(_currentWayfindingListener)
+                } catch (e: Exception) {
+                    // Si falla, intentamos la sobrecarga sin argumentos.
+                    try {
+                        _locationManager?.removeWayfindingUpdates()
+                    } catch (_: Exception) {
+                        Log.e("IAFlutterEngine", "Failed to remove wayfinding updates", e)
                     }
-                } catch (e: Exception) {}
+                }
 
                 val listener = object : com.indooratlas.android.sdk.IAWayfindingListener {
                     override fun onWayfindingUpdate(route: com.indooratlas.android.sdk.IARoute) {
                         try {
                             _channel.invokeMethod("onWayfindingUpdate", listOf(IARoute2Map(route)))
-                        } catch (e: Exception) {}
+                        } catch (e: Exception) {
+                            Log.e("IAFlutterEngine", "Error invoking onWayfindingUpdate", e)
+                        }
                     }
                 }
-
                 _currentWayfindingListener = listener
 
                 try {
                     _locationManager?.requestWayfindingUpdates(request, listener)
                 } catch (e: Exception) {
-                    try {
-                        val m = _locationManager?.javaClass?.getMethod("requestWayfindingUpdates", com.indooratlas.android.sdk.IAWayfindingListener::class.java)
-                        m?.invoke(_locationManager, listener)
-                    } catch (ex: Exception) {}
+                    Log.e("IAFlutterEngine", "Failed to request wayfinding updates", e)
                 }
             }
         }
@@ -505,18 +512,20 @@ class IAFlutterEngine(
 
     fun stopWayfinding() {
         _handler.post {
-            try {
-                if (_currentWayfindingListener != null) {
+            if (_locationManager != null) {
+                try {
+                    // Intenta eliminar el listener específico si existe
+                    _locationManager?.removeWayfindingUpdates(_currentWayfindingListener)
+                } catch (e: Exception) {
+                    // Si falla, intenta la sobrecarga sin argumentos
                     try {
-                        _locationManager?.removeWayfindingUpdates(_currentWayfindingListener)
-                    } catch (e: Exception) {
-                        try { _locationManager?.removeWayfindingUpdates() } catch (_: Exception) {}
+                        _locationManager?.removeWayfindingUpdates()
+                    } catch (_: Exception) {
+                        Log.e("IAFlutterEngine", "Failed to stop wayfinding updates", e)
                     }
-                    _currentWayfindingListener = null
-                } else {
-                    try { _locationManager?.removeWayfindingUpdates() } catch (_: Exception) {}
                 }
-            } catch (e: Exception) {}
+                _currentWayfindingListener = null
+            }
         }
     }
 

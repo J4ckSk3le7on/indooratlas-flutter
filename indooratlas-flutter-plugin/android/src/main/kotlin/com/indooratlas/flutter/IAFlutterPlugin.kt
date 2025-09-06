@@ -7,16 +7,35 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
+import android.Manifest
+import android.content.Context
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 
+// Importaciones de IndoorAtlas
 import com.indooratlas.android.sdk.IALocation
+import com.indooratlas.android.sdk.IALocationRequest
+import com.indooratlas.android.sdk.IAOrientationRequest
 import com.indooratlas.android.sdk.IALocationListener
 import com.indooratlas.android.sdk.IALocationManager
-import com.indooratlas.android.sdk.IALocationRequest
+import com.indooratlas.android.sdk.IARegion
+import com.indooratlas.android.sdk.IARoute
+import com.indooratlas.android.sdk.IAOrientationListener
+import com.indooratlas.android.sdk.IAGeofenceListener
+import com.indooratlas.android.sdk.IAGeofenceEvent
+import com.indooratlas.android.sdk.IAPOI
+import com.indooratlas.android.sdk.resources.IAFloorPlan
+import com.indooratlas.android.sdk.resources.IALatLng
+import com.indooratlas.android.sdk.resources.IAVenue
 
 
-class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
+class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware, PluginRegistry.RequestPermissionsResultListener {
     private lateinit var _engineImpl: IAFlutterEngine
     private lateinit var _channel: MethodChannel
+    private var _activityBinding: ActivityPluginBinding? = null
 
     override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         _channel = MethodChannel(flutterPluginBinding.binaryMessenger, "com.indooratlas.flutter")
@@ -30,19 +49,31 @@ class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityA
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
-        _engineImpl.activityBinding = binding
+        _activityBinding = binding
+        _activityBinding?.addRequestPermissionsResultListener(this)
+        _engineImpl.activityBinding = _activityBinding
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
         _engineImpl.activityBinding = null
+        _activityBinding?.removeRequestPermissionsResultListener(this)
+        _activityBinding = null
     }
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
-        _engineImpl.activityBinding = binding
+        _activityBinding = binding
+        _activityBinding?.addRequestPermissionsResultListener(this)
+        _engineImpl.activityBinding = _activityBinding
     }
 
     override fun onDetachedFromActivity() {
         _engineImpl.activityBinding = null
+        _activityBinding?.removeRequestPermissionsResultListener(this)
+        _activityBinding = null
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
+        return _engineImpl.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: MethodChannel.Result) {
