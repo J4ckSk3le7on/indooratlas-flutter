@@ -1,21 +1,25 @@
 package com.indooratlas.flutter
 
-// Importaciones de Android
+// Android imports
 import android.Manifest
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import androidx.annotation.NonNull
 import android.util.Log
+import androidx.annotation.NonNull
 
-// Importaciones de Flutter
+// Flutter / plugin imports
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 
-// Importaciones de IndoorAtlas
+// IndoorAtlas imports
 import com.indooratlas.android.sdk.IALocation
 import com.indooratlas.android.sdk.IALocationRequest
 import com.indooratlas.android.sdk.IAOrientationRequest
@@ -31,11 +35,10 @@ import com.indooratlas.android.sdk.resources.IAFloorPlan
 import com.indooratlas.android.sdk.resources.IALatLng
 import com.indooratlas.android.sdk.resources.IAVenue
 
-// Resto del código...
-
 // Simple wrapper result (left for compatibility)
 open class IAFlutterResult
 
+// ---------- Mapping helpers ----------
 private fun IAPOI2Map(poi: IAPOI): Map<String, Any?> {
     return mapOf(
         "type" to "Feature",
@@ -175,6 +178,7 @@ private fun IARoute2Map(route: IARoute): Map<String, Any?> {
     )
 }
 
+// ---------- Engine ----------
 class IAFlutterEngine(
     context: Context,
     private val _channel: MethodChannel
@@ -184,16 +188,11 @@ class IAFlutterEngine(
     IAGeofenceListener,
     PluginRegistry.RequestPermissionsResultListener {
 
+    // activity binding (set from plugin)
     var activityBinding: ActivityPluginBinding? = null
-        get() = field
         set(value) {
-            if (field != null) {
-                val old = field as ActivityPluginBinding
-                old.removeRequestPermissionsResultListener(this)
-            }
-            if (value != null) {
-                value.addRequestPermissionsResultListener(this)
-            }
+            field?.removeRequestPermissionsResultListener(this)
+            value?.addRequestPermissionsResultListener(this)
             field = value
         }
 
@@ -209,8 +208,10 @@ class IAFlutterEngine(
     private val _currentGeofences = mutableListOf<Map<String, Any?>>()
     private val _currentTriggeredGeofenceIds = mutableSetOf<String>()
 
-    // reference to the active wayfinding listener (if any)
+    // wayfinding storage (listener or pendingintent path)
     private var _currentWayfindingListener: com.indooratlas.android.sdk.IAWayfindingListener? = null
+    private var _wayfindingPendingIntent: PendingIntent? = null
+    private var _wayfindingReceiver: BroadcastReceiver? = null
 
     private val PERMISSION_REQUEST_CODE = 444444
 
@@ -226,6 +227,7 @@ class IAFlutterEngine(
         }
     }.toTypedArray()
 
+    // -------- IALocationListener --------
     override fun onStatusChanged(@NonNull provider: String, status: Int, bundle: Bundle?) {
         val mappedStatus = when (status) {
             IALocationManager.STATUS_OUT_OF_SERVICE -> 0
@@ -359,6 +361,7 @@ class IAFlutterEngine(
         // no-op here, we handle geofences via regions/venue
     }
 
+    // RequestPermissionsResultListener callback implementation
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
         if (requestCode != PERMISSION_REQUEST_CODE) {
             _channel.invokeMethod("onPermissionsGranted", listOf(false))
@@ -372,6 +375,13 @@ class IAFlutterEngine(
         _handler.post {
             _locationManager?.destroy()
             _locationManager = null
+            // cleanup wayfinding receiver if any
+            _wayfindingReceiver?.let {
+                try { _context.unregisterReceiver(it) } catch (_: Exception) {}
+                _wayfindingReceiver = null
+            }
+            _wayfindingPendingIntent = null
+            _currentWayfindingListener = null
         }
         _channel.setMethodCallHandler(null)
     }
@@ -457,74 +467,200 @@ class IAFlutterEngine(
         }
     }
 
+    /**
+     * startWayfinding: compatible con SDKs que aceptan IAWayfindingListener y con SDKs que
+     * usan PendingIntent (broadcast). Primero intenta la variante con listener por reflexión;
+     * si no está disponible, crea un PendingIntent y registra un BroadcastReceiver para recibir
+     * actualizaciones.
+     */
     fun startWayfinding(lat: Double?, lon: Double?, floor: Int?, mode: Int? = null) {
         _handler.post {
-            if (_locationManager != null) {
-                val builder = com.indooratlas.android.sdk.IAWayfindingRequest.Builder()
-                    .withLatitude(lat ?: 0.0)
-                    .withLongitude(lon ?: 0.0)
-                    .withFloor(floor ?: 0)
-
-                if (mode != null) {
-                    try {
-                        when (mode) {
-                            1 -> builder.withTags(com.indooratlas.android.sdk.IAWayfindingTags.EXCLUDE_INACCESSIBLE)
-                            2 -> builder.withTags(com.indooratlas.android.sdk.IAWayfindingTags.EXCLUDE_ACCESSIBLE_ONLY)
-                        }
-                    } catch (e: Exception) {
-                        // tags might not exist on every SDK version
-                    }
-                }
-
-                val request = builder.build()
-
-                // Intentamos eliminar el listener anterior de forma segura.
+            val mgr = _locationManager ?: return@post
+            val builder = com.indooratlas.android.sdk.IAWayfindingRequest.Builder()
+                .withLatitude(lat ?: 0.0)
+                .withLongitude(lon ?: 0.0)
+                .withFloor(floor ?: 0)
+            if (mode != null) {
                 try {
-                    _locationManager?.removeWayfindingUpdates(_currentWayfindingListener)
-                } catch (e: Exception) {
-                    // Si falla, intentamos la sobrecarga sin argumentos.
-                    try {
-                        _locationManager?.removeWayfindingUpdates()
-                    } catch (_: Exception) {
-                        Log.e("IAFlutterEngine", "Failed to remove wayfinding updates", e)
+                    when (mode) {
+                        1 -> builder.withTags(com.indooratlas.android.sdk.IAWayfindingTags.EXCLUDE_INACCESSIBLE)
+                        2 -> builder.withTags(com.indooratlas.android.sdk.IAWayfindingTags.EXCLUDE_ACCESSIBLE_ONLY)
                     }
-                }
-
-                val listener = object : com.indooratlas.android.sdk.IAWayfindingListener {
-                    override fun onWayfindingUpdate(route: com.indooratlas.android.sdk.IARoute) {
-                        try {
-                            _channel.invokeMethod("onWayfindingUpdate", listOf(IARoute2Map(route)))
-                        } catch (e: Exception) {
-                            Log.e("IAFlutterEngine", "Error invoking onWayfindingUpdate", e)
-                        }
-                    }
-                }
-                _currentWayfindingListener = listener
-
-                try {
-                    _locationManager?.requestWayfindingUpdates(request, listener)
                 } catch (e: Exception) {
-                    Log.e("IAFlutterEngine", "Failed to request wayfinding updates", e)
+                    // tags might not exist on every SDK version
                 }
             }
+            val request = builder.build()
+
+            // remove previous wayfinding registrations safely
+            try {
+                // try listener-based removal first
+                val rmListener = mgr.javaClass.methods.firstOrNull { it.name == "removeWayfindingUpdates" && it.parameterTypes.size == 1 && it.parameterTypes[0].name.contains("IAWayfindingListener") }
+                if (rmListener != null && _currentWayfindingListener != null) {
+                    rmListener.invoke(mgr, _currentWayfindingListener)
+                } else {
+                    // try pendingintent removal
+                    val rmPI = mgr.javaClass.methods.firstOrNull { it.name == "removeWayfindingUpdates" && it.parameterTypes.size == 1 && android.app.PendingIntent::class.java.isAssignableFrom(it.parameterTypes[0]) }
+                    rmPI?.let {
+                        _wayfindingPendingIntent?.let { pi ->
+                            try {
+                                it.invoke(mgr, pi)
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("IAFlutterEngine", "Failed to remove previous wayfinding registration", e)
+            }
+
+            // prepare listener (for listener-based API)
+            val listener = object : com.indooratlas.android.sdk.IAWayfindingListener {
+                override fun onWayfindingUpdate(route: com.indooratlas.android.sdk.IARoute) {
+                    try {
+                        _channel.invokeMethod("onWayfindingUpdate", listOf(IARoute2Map(route)))
+                    } catch (e: Exception) {
+                        Log.e("IAFlutterEngine", "Error invoking onWayfindingUpdate", e)
+                    }
+                }
+            }
+
+            _currentWayfindingListener = listener
+
+            // 1) Try direct listener-based method by reflection
+            val methodWithListener = mgr.javaClass.methods.firstOrNull {
+                it.name == "requestWayfindingUpdates" &&
+                        it.parameterTypes.size == 2 &&
+                        it.parameterTypes[0].name.contains("IAWayfindingRequest") &&
+                        it.parameterTypes[1].name.contains("IAWayfindingListener")
+            }
+            if (methodWithListener != null) {
+                try {
+                    methodWithListener.invoke(mgr, request, listener)
+                    return@post
+                } catch (e: Exception) {
+                    Log.w("IAFlutterEngine", "Listener-based requestWayfindingUpdates reflection failed", e)
+                    // fall through to try PendingIntent approach
+                }
+            }
+
+            // 2) Try PendingIntent-based API: construct PendingIntent + BroadcastReceiver and call method
+            val methodWithPI = mgr.javaClass.methods.firstOrNull {
+                it.name == "requestWayfindingUpdates" &&
+                        it.parameterTypes.size == 2 &&
+                        it.parameterTypes[0].name.contains("IAWayfindingRequest") &&
+                        android.app.PendingIntent::class.java.isAssignableFrom(it.parameterTypes[1])
+            }
+
+            if (methodWithPI != null) {
+                try {
+                    // Prepare action and PendingIntent
+                    val action = "com.indooratlas.flutter.WAYFINDING_UPDATE"
+                    val intent = Intent(action)
+                    // target only our app
+                    intent.setPackage(_context.packageName)
+
+                    val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                    } else {
+                        PendingIntent.FLAG_UPDATE_CURRENT
+                    }
+
+                    val pi = PendingIntent.getBroadcast(_context, System.identityHashCode(request), intent, flags)
+                    _wayfindingPendingIntent = pi
+
+                    // register receiver
+                    _wayfindingReceiver?.let {
+                        try { _context.unregisterReceiver(it) } catch (_: Exception) {}
+                        _wayfindingReceiver = null
+                    }
+                    _wayfindingReceiver = object : BroadcastReceiver() {
+                        override fun onReceive(ctx: Context?, intent: Intent?) {
+                            try {
+                                if (intent == null) return
+                                // Attempt 1: SDK might put an IARoute as a Parcelable under "route"
+                                val parcelRoute = intent.getParcelableExtra<com.indooratlas.android.sdk.IARoute>("route")
+                                if (parcelRoute != null) {
+                                    _channel.invokeMethod("onWayfindingUpdate", listOf(IARoute2Map(parcelRoute)))
+                                    return
+                                }
+                                // Attempt 2: check extras for any IARoute or serializable object
+                                val extras = intent.extras
+                                if (extras != null) {
+                                    for (key in extras.keySet()) {
+                                        val extra = extras.get(key)
+                                        if (extra is com.indooratlas.android.sdk.IARoute) {
+                                            _channel.invokeMethod("onWayfindingUpdate", listOf(IARoute2Map(extra)))
+                                            return
+                                        }
+                                    }
+                                }
+                                // If nothing understood, log contents for debug
+                                Log.d("IAFlutterEngine", "Wayfinding broadcast received but no route found; extras=${intent.extras?.keySet()}")
+                            } catch (e: Exception) {
+                                Log.e("IAFlutterEngine", "Wayfinding receiver error", e)
+                            }
+                        }
+                    }
+                    _context.registerReceiver(_wayfindingReceiver, IntentFilter(action))
+
+                    // invoke SDK method
+                    methodWithPI.invoke(mgr, request, pi)
+                    return@post
+                } catch (e: Exception) {
+                    Log.e("IAFlutterEngine", "PendingIntent-based requestWayfindingUpdates failed", e)
+                }
+            }
+
+            // If neither method present, log error
+            Log.e("IAFlutterEngine", "No compatible requestWayfindingUpdates overload found on IALocationManager")
         }
     }
 
+    /**
+     * stopWayfinding: también soporta ambas variantes por reflexión.
+     */
     fun stopWayfinding() {
         _handler.post {
-            if (_locationManager != null) {
-                try {
-                    // Intenta eliminar el listener específico si existe
-                    _locationManager?.removeWayfindingUpdates(_currentWayfindingListener)
-                } catch (e: Exception) {
-                    // Si falla, intenta la sobrecarga sin argumentos
-                    try {
-                        _locationManager?.removeWayfindingUpdates()
-                    } catch (_: Exception) {
-                        Log.e("IAFlutterEngine", "Failed to stop wayfinding updates", e)
-                    }
+            val mgr = _locationManager ?: return@post
+            try {
+                // Try listener-based remove
+                val rmListener = mgr.javaClass.methods.firstOrNull { it.name == "removeWayfindingUpdates" && it.parameterTypes.size == 1 && it.parameterTypes[0].name.contains("IAWayfindingListener") }
+                if (rmListener != null && _currentWayfindingListener != null) {
+                    try { rmListener.invoke(mgr, _currentWayfindingListener) } catch (e: Exception) { Log.w("IAFlutterEngine", "removeWayfindingUpdates(listener) failed", e) }
+                    _currentWayfindingListener = null
+                    return@post
                 }
+
+                // Try PendingIntent remove
+                val rmPI = mgr.javaClass.methods.firstOrNull { it.name == "removeWayfindingUpdates" && it.parameterTypes.size == 1 && android.app.PendingIntent::class.java.isAssignableFrom(it.parameterTypes[0]) }
+                if (rmPI != null) {
+                    try {
+                        _wayfindingPendingIntent?.let { pi ->
+                            rmPI.invoke(mgr, pi)
+                        }
+                    } catch (e: Exception) {
+                        Log.w("IAFlutterEngine", "removeWayfindingUpdates(pendingIntent) failed", e)
+                    } finally {
+                        // cleanup receiver and pi
+                        _wayfindingReceiver?.let {
+                            try { _context.unregisterReceiver(it) } catch (_: Exception) {}
+                            _wayfindingReceiver = null
+                        }
+                        _wayfindingPendingIntent = null
+                    }
+                    return@post
+                }
+
+                // No supported removal method found, log and clear stored listener
+                Log.w("IAFlutterEngine", "No compatible removeWayfindingUpdates overload found on IALocationManager")
                 _currentWayfindingListener = null
+                _wayfindingPendingIntent = null
+                _wayfindingReceiver?.let {
+                    try { _context.unregisterReceiver(it) } catch (_: Exception) {}
+                    _wayfindingReceiver = null
+                }
+            } catch (e: Exception) {
+                Log.e("IAFlutterEngine", "stopWayfinding exception", e)
             }
         }
     }
