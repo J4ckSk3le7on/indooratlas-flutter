@@ -99,6 +99,15 @@ class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityA
                     _engineImpl.stopPositioning()
                     result.success(null)
                 }
+                "setLocation" -> {
+                    val args = call.arguments as List<*>
+                    val lat = (args.getOrNull(0) as Number?)?.toDouble()
+                    val lon = (args.getOrNull(1) as Number?)?.toDouble()
+                    val floor = (args.getOrNull(2) as Number?)?.toInt()
+                    val acc = (args.getOrNull(3) as Number?)?.toDouble()
+                    _engineImpl.setLocation(lat, lon, floor, acc)
+                    result.success(null)
+                }
                 "setOutputThresholds" -> {
                     val args = call.arguments as List<*>
                     val distance = (args[0] as Number?)?.toDouble()
