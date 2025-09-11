@@ -526,6 +526,18 @@ class IAFlutterEngine(
 
             _currentWayfindingListener = listener
 
+            // ------------------------------------------------------------
+            // Fast-path for latest SDK versions (>= 3.0): call directly
+            // ------------------------------------------------------------
+            try {
+                mgr.requestWayfindingUpdates(request, listener)
+                return@post
+            } catch (e: NoSuchMethodError) {
+                // ignore – older SDK; fall back below
+            } catch (e: Throwable) {
+                Log.w("IAFlutterEngine", "Direct requestWayfindingUpdates failed; trying reflection", e)
+            }
+
             // 1) Try direct listener-based method by reflection
             val methodWithListener = mgr.javaClass.methods.firstOrNull {
                 it.name == "requestWayfindingUpdates" &&
@@ -622,45 +634,55 @@ class IAFlutterEngine(
     fun stopWayfinding() {
         _handler.post {
             val mgr = _locationManager ?: return@post
+
+            // Fast-path: try direct public API first
             try {
-                // Try listener-based remove
-                val rmListener = mgr.javaClass.methods.firstOrNull { it.name == "removeWayfindingUpdates" && it.parameterTypes.size == 1 && it.parameterTypes[0].name.contains("IAWayfindingListener") }
-                if (rmListener != null && _currentWayfindingListener != null) {
-                    try { rmListener.invoke(mgr, _currentWayfindingListener) } catch (e: Exception) { Log.w("IAFlutterEngine", "removeWayfindingUpdates(listener) failed", e) }
+                _currentWayfindingListener?.let {
+                    mgr.removeWayfindingUpdates(it)
                     _currentWayfindingListener = null
                     return@post
                 }
+            } catch (e: NoSuchMethodError) {
+                // fall through to reflection variations below
+            } catch (e: Throwable) {
+                Log.w("IAFlutterEngine", "Direct removeWayfindingUpdates failed; falling back", e)
+            }
 
-                // Try PendingIntent remove
-                val rmPI = mgr.javaClass.methods.firstOrNull { it.name == "removeWayfindingUpdates" && it.parameterTypes.size == 1 && android.app.PendingIntent::class.java.isAssignableFrom(it.parameterTypes[0]) }
-                if (rmPI != null) {
-                    try {
-                        _wayfindingPendingIntent?.let { pi ->
-                            rmPI.invoke(mgr, pi)
-                        }
-                    } catch (e: Exception) {
-                        Log.w("IAFlutterEngine", "removeWayfindingUpdates(pendingIntent) failed", e)
-                    } finally {
-                        // cleanup receiver and pi
-                        _wayfindingReceiver?.let {
-                            try { _context.unregisterReceiver(it) } catch (_: Exception) {}
-                            _wayfindingReceiver = null
-                        }
-                        _wayfindingPendingIntent = null
-                    }
-                    return@post
-                }
-
-                // No supported removal method found, log and clear stored listener
-                Log.w("IAFlutterEngine", "No compatible removeWayfindingUpdates overload found on IALocationManager")
+            // Try listener-based remove
+            val rmListener = mgr.javaClass.methods.firstOrNull { it.name == "removeWayfindingUpdates" && it.parameterTypes.size == 1 && it.parameterTypes[0].name.contains("IAWayfindingListener") }
+            if (rmListener != null && _currentWayfindingListener != null) {
+                try { rmListener.invoke(mgr, _currentWayfindingListener) } catch (e: Exception) { Log.w("IAFlutterEngine", "removeWayfindingUpdates(listener) failed", e) }
                 _currentWayfindingListener = null
-                _wayfindingPendingIntent = null
-                _wayfindingReceiver?.let {
-                    try { _context.unregisterReceiver(it) } catch (_: Exception) {}
-                    _wayfindingReceiver = null
+                return@post
+            }
+
+            // Try PendingIntent remove
+            val rmPI = mgr.javaClass.methods.firstOrNull { it.name == "removeWayfindingUpdates" && it.parameterTypes.size == 1 && android.app.PendingIntent::class.java.isAssignableFrom(it.parameterTypes[0]) }
+            if (rmPI != null) {
+                try {
+                    _wayfindingPendingIntent?.let { pi ->
+                        rmPI.invoke(mgr, pi)
+                    }
+                } catch (e: Exception) {
+                    Log.w("IAFlutterEngine", "removeWayfindingUpdates(pendingIntent) failed", e)
+                } finally {
+                    // cleanup receiver and pi
+                    _wayfindingReceiver?.let {
+                        try { _context.unregisterReceiver(it) } catch (_: Exception) {}
+                        _wayfindingReceiver = null
+                    }
+                    _wayfindingPendingIntent = null
                 }
-            } catch (e: Exception) {
-                Log.e("IAFlutterEngine", "stopWayfinding exception", e)
+                return@post
+            }
+
+            // No supported removal method found, log and clear stored listener
+            Log.w("IAFlutterEngine", "No compatible removeWayfindingUpdates overload found on IALocationManager")
+            _currentWayfindingListener = null
+            _wayfindingPendingIntent = null
+            _wayfindingReceiver?.let {
+                try { _context.unregisterReceiver(it) } catch (_: Exception) {}
+                _wayfindingReceiver = null
             }
         }
     }
