@@ -1,22 +1,15 @@
 name: indooratlas
 description: Develop Flutter applications powered with the IndoorAtlas indoor positioning technology.
-version: 0.0.1
+version: 1.0.0
 homepage: https://indooratlas.com/
 
 environment:
-  sdk: ^3.9.0
-  flutter: ">=3.35.1"
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: ">=3.16.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  # workaround for https://github.com/flutter/flutter/issues/63240
-  indooratlas_flutter:
-    # sadly we can't use path, due to https://github.com/dart-lang/pub/issues/2447
-    git:
-      url: https://github.com/IndoorAtlas/indooratlas-flutter.git
-      ref: develop
-      path: indooratlas-flutter-plugin/ios
 
 dev_dependencies:
   flutter_test:

@@ -5,11 +5,11 @@ plugins {
 
 android {
     namespace "com.indooratlas.flutter"
-    compileSdkVersion 35
+    compileSdk 35
 
     defaultConfig {
-        minSdkVersion 24
-        targetSdkVersion 34
+        minSdk 24
+        targetSdk 35
     }
 
     compileOptions {
@@ -20,11 +20,16 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
+
+    buildFeatures {
+        buildConfig = true
+    }
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib"
-    implementation 'androidx.annotation:annotation:1.9.1'
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.22"
+    implementation 'androidx.annotation:annotation:1.8.2'
+    implementation 'androidx.core:core-ktx:1.13.1'
     implementation("com.indooratlas.android:indooratlas-android-sdk:3.7.1@aar") {
         transitive = true
     }
