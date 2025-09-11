@@ -225,6 +225,9 @@ class IAFlutterEngine(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             add(Manifest.permission.BLUETOOTH_SCAN)
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add("android.permission.NEARBY_WIFI_DEVICES")
+        }
     }.toTypedArray()
 
     // -------- IALocationListener --------
@@ -464,6 +467,23 @@ class IAFlutterEngine(
             _locationManager?.unregisterOrientationListener(this)
             _locationManager?.unregisterRegionListener(this)
             _locationServiceRunning = false
+        }
+    }
+
+    fun setLocation(lat: Double?, lon: Double?, floor: Int?, accuracy: Double?) {
+        _handler.post {
+            val mgr = _locationManager ?: return@post
+            try {
+                val builder = IALocation.Builder()
+                lat?.let { builder.withLatitude(it) }
+                lon?.let { builder.withLongitude(it) }
+                floor?.let { builder.withFloorLevel(it) }
+                accuracy?.let { builder.withAccuracy(it.toFloat()) }
+                val iaLoc = builder.build()
+                mgr.setLocation(iaLoc)
+            } catch (e: Exception) {
+                Log.e("IAFlutterEngine", "setLocation failed", e)
+            }
         }
     }
 
