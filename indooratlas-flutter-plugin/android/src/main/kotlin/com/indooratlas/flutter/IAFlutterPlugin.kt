@@ -133,6 +133,15 @@ class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityA
                 "getTraceId" -> {
                     result.success(_engineImpl.getTraceId())
                 }
+                "setLocation" -> {
+                    val args = call.arguments as List<*>
+                    val lat = (args[0] as Number?)?.toDouble()
+                    val lon = (args[1] as Number?)?.toDouble()
+                    val floor = (args[2] as Number?)?.toInt()
+                    val acc = (args[3] as Number?)?.toDouble()
+                    _engineImpl.setLocation(lat, lon, floor, acc)
+                    result.success(null)
+                }
                 "requestGeofences" -> {
                     val geofenceIds = (call.arguments as List<*>).map { it as String }
                     _engineImpl.requestGeofences(geofenceIds)
