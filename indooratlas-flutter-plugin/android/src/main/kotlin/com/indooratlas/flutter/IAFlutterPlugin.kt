@@ -7,73 +7,60 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
-import android.Manifest
-import android.content.Context
-import android.os.Build
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
 
-// Importaciones de IndoorAtlas
-import com.indooratlas.android.sdk.IALocation
-import com.indooratlas.android.sdk.IALocationRequest
-import com.indooratlas.android.sdk.IAOrientationRequest
-import com.indooratlas.android.sdk.IALocationListener
-import com.indooratlas.android.sdk.IALocationManager
-import com.indooratlas.android.sdk.IARegion
-import com.indooratlas.android.sdk.IARoute
-import com.indooratlas.android.sdk.IAOrientationListener
-import com.indooratlas.android.sdk.IAGeofenceListener
-import com.indooratlas.android.sdk.IAGeofenceEvent
-import com.indooratlas.android.sdk.IAPOI
-import com.indooratlas.android.sdk.resources.IAFloorPlan
-import com.indooratlas.android.sdk.resources.IALatLng
-import com.indooratlas.android.sdk.resources.IAVenue
-
-
+/**
+ * IndoorAtlas Flutter Plugin
+ * 
+ * This plugin provides Flutter bindings for the IndoorAtlas SDK,
+ * enabling indoor positioning and wayfinding capabilities.
+ */
 class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware, PluginRegistry.RequestPermissionsResultListener {
-    private lateinit var _engineImpl: IAFlutterEngine
-    private lateinit var _channel: MethodChannel
-    private var _activityBinding: ActivityPluginBinding? = null
+    
+    companion object {
+        private const val CHANNEL_NAME = "com.indooratlas.flutter"
+    }
+    
+    private lateinit var engineImpl: IAFlutterEngine
+    private lateinit var channel: MethodChannel
+    private var activityBinding: ActivityPluginBinding? = null
 
     override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
-        _channel = MethodChannel(flutterPluginBinding.binaryMessenger, "com.indooratlas.flutter")
-        _channel.setMethodCallHandler(this)
-        _engineImpl = IAFlutterEngine(flutterPluginBinding.applicationContext, _channel)
+        channel = MethodChannel(flutterPluginBinding.binaryMessenger, CHANNEL_NAME)
+        channel.setMethodCallHandler(this)
+        engineImpl = IAFlutterEngine(flutterPluginBinding.applicationContext, channel)
     }
 
     override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
-        _channel.setMethodCallHandler(null)
-        _engineImpl.detach()
+        channel.setMethodCallHandler(null)
+        engineImpl.detach()
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
-        _activityBinding = binding
-        _activityBinding?.addRequestPermissionsResultListener(this)
-        _engineImpl.activityBinding = _activityBinding
+        activityBinding = binding
+        activityBinding?.addRequestPermissionsResultListener(this)
+        engineImpl.activityBinding = activityBinding
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
-        _engineImpl.activityBinding = null
-        _activityBinding?.removeRequestPermissionsResultListener(this)
-        _activityBinding = null
+        engineImpl.activityBinding = null
+        activityBinding?.removeRequestPermissionsResultListener(this)
+        activityBinding = null
     }
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
-        _activityBinding = binding
-        _activityBinding?.addRequestPermissionsResultListener(this)
-        _engineImpl.activityBinding = _activityBinding
+        activityBinding = binding
+        activityBinding?.addRequestPermissionsResultListener(this)
+        engineImpl.activityBinding = activityBinding
     }
 
     override fun onDetachedFromActivity() {
-        _engineImpl.activityBinding = null
-        _activityBinding?.removeRequestPermissionsResultListener(this)
-        _activityBinding = null
+        engineImpl.activityBinding = null
+        activityBinding?.removeRequestPermissionsResultListener(this)
+        activityBinding = null
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
-        return _engineImpl.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        return engineImpl.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: MethodChannel.Result) {
@@ -84,66 +71,66 @@ class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityA
                     val pluginVersion = args[0] as String
                     val apiKey = args[1] as String
                     val endpoint = (args[2] as? String) ?: ""
-                    _engineImpl.initialize(pluginVersion, apiKey, endpoint)
+                    engineImpl.initialize(pluginVersion, apiKey, endpoint)
                     result.success(null)
                 }
                 "requestPermissions" -> {
-                    _engineImpl.requestPermissions()
+                    engineImpl.requestPermissions()
                     result.success(null)
                 }
                 "startPositioning" -> {
-                    _engineImpl.startPositioning()
+                    engineImpl.startPositioning()
                     result.success(null)
                 }
                 "stopPositioning" -> {
-                    _engineImpl.stopPositioning()
+                    engineImpl.stopPositioning()
                     result.success(null)
                 }
                 "setOutputThresholds" -> {
                     val args = call.arguments as List<*>
                     val distance = (args[0] as Number?)?.toDouble()
                     val interval = (args[1] as Number?)?.toDouble()
-                    _engineImpl.setOutputThresholds(distance, interval)
+                    engineImpl.setOutputThresholds(distance, interval)
                     result.success(null)
                 }
                 "setPositioningMode" -> {
                     val idx = (call.arguments as Number?)?.toInt() ?: 0
-                    _engineImpl.setPositioningMode(idx)
+                    engineImpl.setPositioningMode(idx)
                     result.success(null)
                 }
                 "lockIndoors" -> {
-                    _engineImpl.lockIndoors(call.arguments as Boolean)
+                    engineImpl.lockIndoors(call.arguments as Boolean)
                     result.success(null)
                 }
                 "lockFloor" -> {
-                    _engineImpl.lockFloor((call.arguments as Number?)?.toInt() ?: 0)
+                    engineImpl.lockFloor((call.arguments as Number?)?.toInt() ?: 0)
                     result.success(null)
                 }
                 "unlockFloor" -> {
-                    _engineImpl.unlockFloor()
+                    engineImpl.unlockFloor()
                     result.success(null)
                 }
                 "setSensitivities" -> {
                     val args = call.arguments as List<*>
                     val ori = (args[0] as Number?)?.toDouble()
                     val head = (args[1] as Number?)?.toDouble()
-                    _engineImpl.setSensitivities(ori, head)
+                    engineImpl.setSensitivities(ori, head)
                     result.success(null)
                 }
                 "getTraceId" -> {
-                    result.success(_engineImpl.getTraceId())
+                    result.success(engineImpl.getTraceId())
                 }
                 "requestGeofences" -> {
                     val geofenceIds = (call.arguments as List<*>).map { it as String }
-                    _engineImpl.requestGeofences(geofenceIds)
+                    engineImpl.requestGeofences(geofenceIds)
                     result.success(null)
                 }
                 "removeGeofences" -> {
-                    _engineImpl.removeGeofences()
+                    engineImpl.removeGeofences()
                     result.success(null)
                 }
                 "getCurrentGeofences" -> {
-                    result.success(_engineImpl.getCurrentGeofences())
+                    result.success(engineImpl.getCurrentGeofences())
                 }
                 "startWayfinding" -> {
                     val args = call.arguments as List<*>
@@ -151,11 +138,11 @@ class IAFlutterPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityA
                     val lon = (args[1] as Number?)?.toDouble()
                     val floor = (args[2] as Number?)?.toInt()
                     val mode = if (args.size > 3) (args[3] as Number?)?.toInt() else null
-                    _engineImpl.startWayfinding(lat, lon, floor, mode)
+                    engineImpl.startWayfinding(lat, lon, floor, mode)
                     result.success(null)
                 }
                 "stopWayfinding" -> {
-                    _engineImpl.stopWayfinding()
+                    engineImpl.stopWayfinding()
                     result.success(null)
                 }
                 else -> result.notImplemented()
