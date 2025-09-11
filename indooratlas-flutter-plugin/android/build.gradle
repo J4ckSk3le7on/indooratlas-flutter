@@ -23,7 +23,7 @@ android {
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.22"
     implementation 'androidx.annotation:annotation:1.9.1'
     implementation("com.indooratlas.android:indooratlas-android-sdk:3.7.1@aar") {
         transitive = true
