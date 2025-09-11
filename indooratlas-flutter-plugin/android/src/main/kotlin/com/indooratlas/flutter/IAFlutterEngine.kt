@@ -467,6 +467,25 @@ class IAFlutterEngine(
         }
     }
 
+    fun setLocation(lat: Double?, lon: Double?, floor: Int?, accuracy: Double?) {
+        _handler.post {
+            val mgr = _locationManager ?: return@post
+            try {
+                val b = IALocation.Builder()
+                    .withLatitude(lat ?: 0.0)
+                    .withLongitude(lon ?: 0.0)
+                    .withFloorLevel(floor ?: 0)
+                if (accuracy != null && accuracy > 0) {
+                    b.withAccuracy(accuracy.toFloat())
+                }
+                val iaLoc = b.build()
+                mgr.setLocation(iaLoc)
+            } catch (e: Exception) {
+                Log.e("IAFlutterEngine", "setLocation failed", e)
+            }
+        }
+    }
+
     /**
      * startWayfinding: compatible con SDKs que aceptan IAWayfindingListener y con SDKs que
      * usan PendingIntent (broadcast). Primero intenta la variante con listener por reflexión;
